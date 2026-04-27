@@ -69,6 +69,7 @@ The current workspace at `/Users/mc/development/AI/AvatarKit-AI` is initialized 
 - Saved AvatarKit AI product plan v1 in `docs/product/plan_v1.md`.
 - Saved AvatarKit AI implementation plan v1 in `docs/architecture/avatar-kit-ai-technical-design.md`.
 - Saved AvatarKit AI phased software specification in `docs/specifications/avatar-kit-ai-software-specification.md`.
+- Initialized the GitHub repository and pushed the planning/context baseline to `main`.
 
 ## Important Decisions
 
@@ -96,6 +97,7 @@ The current workspace at `/Users/mc/development/AI/AvatarKit-AI` is initialized 
 - If real project files are restored, immediately refresh `docs/project-state.md` from the actual repo instead of preserving these minimal bootstrap notes.
 - `docs/_local/current-session.md` is intentionally ignored and will not travel with the repo.
 - Local `gh` authentication is currently invalid; use git remote operations or re-authenticate `gh` before GitHub CLI PR workflows.
+- Current baseline commit: `ec8daae` (`Add AvatarKit planning docs`).
 
 ## Standard Verification
 
