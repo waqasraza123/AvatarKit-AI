@@ -303,6 +303,158 @@ Use the paths above and verify each expected state with a browser.
 
 Use the paths above and confirm each expected behavior in a browser.
 
+## Phase 4 - Consent and Identity Safety
+
+### Implemented this phase
+
+- Added consent and identity-safety persistence:
+  - `ConsentRecord`
+  - `ConsentType`
+  - `PermissionBasis`
+- `ConsentRecord` stores:
+  - `id`
+  - `workspaceId`
+  - `avatarId`
+  - `avatarAssetId`
+  - `acceptedByUserId`
+  - `consentType`
+  - `permissionBasis`
+  - `termsVersion`
+  - `acceptedIp`
+  - `acceptedUserAgent`
+  - `acceptedAt`
+  - `createdAt`
+  - `updatedAt`
+- Consent is tied to the current valid source photo through `ConsentRecord.avatarAssetId`.
+- The current source photo remains the latest valid `AvatarAsset` with `type = SOURCE_PHOTO`.
+- A consent record is current only when its `avatarAssetId` matches the current valid source photo asset.
+- Old consent records remain available as database audit history but do not count after the source photo changes.
+- Added consent domain helpers in `apps/web/src/lib/avatar-consent.ts`.
+- Consent form inputs are validated with a Zod schema plus workspace/source-photo checks at the server action boundary.
+- Added `acceptAvatarConsentAction` in `apps/web/src/app/actions/avatars.ts`.
+- Replaced the Avatar Studio Consent placeholder with a functional consent step.
+- Updated setup checklist behavior:
+  - Basics can complete.
+  - Photo can complete.
+  - Consent can complete when accepted for the current valid source photo.
+  - Behavior can complete.
+  - Voice, Knowledge, Preview, and Published remain incomplete.
+- Updated avatar list cards with consent state:
+  - `Consent accepted`
+  - `Consent needed`
+  - `Photo needed before consent`
+
+### Phase 4 access behavior
+
+- User must be authenticated.
+- User must belong to the active workspace.
+- Avatar must belong to the active workspace.
+- Current source photo must belong to the same workspace and avatar.
+- Current source photo must be a valid `SOURCE_PHOTO` asset.
+- `VIEWER` can view consent state but cannot accept consent.
+- `OWNER`, `ADMIN`, and `OPERATOR` can accept consent.
+- `SUSPENDED` avatars cannot accept consent.
+- Consent acceptance does not change avatar status and does not enable publishing.
+
+### Consent validity rules
+
+- Consent cannot be accepted without a current valid source photo.
+- Consent type is required and must be one of:
+  - `SELF_IMAGE`
+  - `AUTHORIZED_STAFF`
+  - `BUSINESS_OWNED_CHARACTER`
+  - `LICENSED_SYNTHETIC_AVATAR`
+- Permission basis is required and must be one of:
+  - `I_OWN_THIS_IMAGE`
+  - `I_HAVE_PERMISSION_FROM_PERSON_SHOWN`
+  - `BRAND_OWNED_FICTIONAL_OR_SYNTHETIC_CHARACTER`
+  - `PROPERLY_LICENSED_AVATAR_IMAGE`
+- All required identity-safety statements must be accepted.
+- If the current source photo is replaced, prior consent remains in the database but no longer counts.
+- If the current source photo is removed, Consent accepted becomes incomplete.
+
+### Phase 4 non-goals intentionally left off
+
+- no real voice library or provider
+- no voice cloning consent
+- no knowledge base
+- no AI runtime calls
+- no LLM calls
+- no TTS/STT
+- no avatar video generation
+- no avatar provider API calls
+- no embeddable widget or React SDK
+- no lead capture workflow
+- no billing or usage metering beyond setup checklist UI
+- no realtime streaming
+- no self-hosted avatar engine
+- no publish functionality
+- no public identity verification, face recognition, celebrity detection, KYC, or moderation provider integration
+- no legal compliance claims
+
+### Manual verification paths for Phase 4
+
+1. Consent step availability  
+   Path: sign in, create/select workspace, open `/dashboard/avatars/[avatarId]/studio`, click Consent step  
+   Expected: Consent step is now functional and no longer a locked placeholder.
+
+2. Consent blocked without photo  
+   Path: open Consent step for an avatar without a source photo  
+   Expected: consent form is blocked and user is told to upload a photo first.
+
+3. Accept consent with valid photo  
+   Path: upload a valid source photo, open Consent step, select consent type, check required statements, submit  
+   Expected: consent is accepted, timestamp/status appears, setup checklist marks Consent accepted complete.
+
+4. Required checkbox validation  
+   Path: try to accept consent without checking all required statements  
+   Expected: submit is disabled or validation error appears and no consent is accepted.
+
+5. Consent type validation  
+   Path: try to submit without consent type  
+   Expected: submit remains disabled; if the request is forced, validation error appears and no consent is accepted.
+
+6. Photo replacement invalidates consent  
+   Path: accept consent, replace source photo  
+   Expected: old consent no longer counts as current, checklist marks Consent accepted incomplete, UI asks user to re-accept consent.
+
+7. Photo removal invalidates consent  
+   Path: accept consent, remove source photo  
+   Expected: Consent accepted becomes incomplete and consent step is blocked until a new photo is uploaded.
+
+8. Avatar list consent state  
+   Path: return to `/dashboard/avatars` after accepting/removing/replacing consent-related photo  
+   Expected: avatar card shows correct consent accepted/consent needed/photo needed state.
+
+9. Workspace isolation  
+   Path: attempt to accept consent for an avatar/photo in another workspace  
+   Expected: access is blocked or safely redirected.
+
+10. Viewer restrictions  
+    Path: access as `VIEWER` role if manually seeded  
+    Expected: viewer can see consent state but cannot accept or update consent.
+
+11. Suspended avatar guard  
+    Path: if manually forcing avatar to `SUSPENDED`, attempt consent acceptance  
+    Expected: consent acceptance is blocked.
+
+12. Non-goal protection  
+    Path: inspect UI after Phase 4  
+    Expected: voice provider, knowledge, AI preview, widget, publish, runtime, media generation, and billing are still not functional.
+
+### Commands to run manually
+
+- `pnpm install`
+- `cp .env.example .env`
+- `pnpm docker:up`
+- `pnpm db:generate`
+- `pnpm db:migrate`
+- `pnpm dev:web`
+- `pnpm dev:api`
+- `pnpm dev:ai-runtime`
+
+Use the paths above and confirm each expected behavior in a browser.
+
 ## Phase Discipline
 
 Use `docs/specifications/avatar-kit-ai-software-specification.md` as the execution sequence.

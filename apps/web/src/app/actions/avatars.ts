@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation"
 import { revalidatePath } from "next/cache"
+import { headers } from "next/headers"
 import { randomUUID } from "node:crypto"
 import {
   AvatarAssetType,
@@ -34,6 +35,12 @@ import {
   getAvatarPhotoFileMetadata,
   validateAvatarPhotoFile
 } from "@/lib/avatar-photo-validation"
+import {
+  AVATAR_CONSENT_TERMS_VERSION,
+  hasAvatarConsentFieldErrors,
+  parseAvatarConsentInput,
+  type AvatarConsentFieldErrors
+} from "@/lib/avatar-consent"
 
 const NAME_MAX_LENGTH = 120
 const DISPLAY_NAME_MAX_LENGTH = 140
@@ -59,6 +66,12 @@ type AvatarPhotoActionState = {
   }
 }
 
+type AvatarConsentActionState = {
+  status: "idle" | "error" | "success"
+  message?: string
+  fieldErrors?: AvatarConsentFieldErrors
+}
+
 function hasFieldErrors(errors: AvatarFieldErrors): boolean {
   return Object.values(errors).some(Boolean)
 }
@@ -82,6 +95,17 @@ function photoValidationError(
   }
 }
 
+function consentValidationError(
+  message: string,
+  fieldErrors?: AvatarConsentFieldErrors
+): AvatarConsentActionState {
+  return {
+    status: "error",
+    message,
+    fieldErrors
+  }
+}
+
 function canWriteAvatars(role: WorkspaceRole): boolean {
   return hasWorkspaceRole(role, WorkspaceRole.OPERATOR)
 }
@@ -92,6 +116,15 @@ function normalizeField(formData: FormData, key: string): string {
 
 function canEditAvatarPhoto(status: AvatarStatus): boolean {
   return status === AvatarStatus.DRAFT || status === AvatarStatus.READY || status === AvatarStatus.FAILED
+}
+
+function getRequestIp(headersList: Headers): string | null {
+  const forwardedFor = headersList.get("x-forwarded-for")
+  if (forwardedFor) {
+    return forwardedFor.split(",")[0]?.trim() || null
+  }
+
+  return headersList.get("x-real-ip")?.trim() || null
 }
 
 function parsePhotoForm(formData: FormData): { avatarId: string; photoFile: File | null } {
@@ -686,5 +719,121 @@ export async function removeAvatarPhotoAction(
   return {
     status: "success",
     message: "Avatar photo removed."
+  }
+}
+
+export async function acceptAvatarConsentAction(
+  _state: AvatarConsentActionState,
+  formData: FormData
+): Promise<AvatarConsentActionState> {
+  const context = await getWorkspaceContextForRequest({ nextPath: "/dashboard/avatars" })
+  if (!context) {
+    return consentValidationError("Authentication is required.")
+  }
+
+  if (!canWriteAvatars(context.workspaceMembership.role)) {
+    return consentValidationError("Viewer roles cannot accept avatar consent.")
+  }
+
+  const { data, fieldErrors } = parseAvatarConsentInput(formData)
+  if (hasAvatarConsentFieldErrors(fieldErrors)) {
+    return consentValidationError("Please complete all required consent fields.", fieldErrors)
+  }
+
+  if (!data.consentType || !data.permissionBasis) {
+    return consentValidationError("Please complete all required consent fields.", fieldErrors)
+  }
+
+  const avatar = await prisma.avatar.findFirst({
+    where: {
+      id: data.avatarId,
+      workspaceId: context.workspace.id
+    },
+    select: {
+      id: true,
+      workspaceId: true,
+      status: true
+    }
+  })
+
+  if (!avatar) {
+    return consentValidationError("Avatar does not exist in this workspace.")
+  }
+
+  if (avatar.status === AvatarStatus.SUSPENDED) {
+    return consentValidationError("Consent cannot be accepted while this avatar is suspended.")
+  }
+
+  const currentPhoto = await prisma.avatarAsset.findFirst({
+    where: {
+      id: data.sourcePhotoAssetId,
+      workspaceId: avatar.workspaceId,
+      avatarId: avatar.id,
+      type: AvatarAssetType.SOURCE_PHOTO,
+      validationStatus: AvatarAssetValidationStatus.VALID
+    },
+    select: {
+      id: true
+    }
+  })
+
+  if (!currentPhoto) {
+    return consentValidationError("Upload a valid source photo before accepting consent.", {
+      sourcePhotoAssetId: "Current source photo is missing or no longer valid."
+    })
+  }
+
+  const latestSourcePhoto = await prisma.avatarAsset.findFirst({
+    where: {
+      workspaceId: avatar.workspaceId,
+      avatarId: avatar.id,
+      type: AvatarAssetType.SOURCE_PHOTO,
+      validationStatus: AvatarAssetValidationStatus.VALID
+    },
+    orderBy: { updatedAt: "desc" },
+    select: { id: true }
+  })
+
+  if (!latestSourcePhoto || latestSourcePhoto.id !== currentPhoto.id) {
+    return consentValidationError("The source photo changed. Review the current photo and accept consent again.", {
+      sourcePhotoAssetId: "This consent form is no longer tied to the current source photo."
+    })
+  }
+
+  const headersList = await headers()
+  const acceptedIp = getRequestIp(headersList)
+  const acceptedUserAgent = headersList.get("user-agent")?.trim() || null
+
+  await prisma.consentRecord.upsert({
+    where: {
+      avatarAssetId: currentPhoto.id
+    },
+    create: {
+      workspaceId: avatar.workspaceId,
+      avatarId: avatar.id,
+      avatarAssetId: currentPhoto.id,
+      acceptedByUserId: context.user.id,
+      consentType: data.consentType,
+      permissionBasis: data.permissionBasis,
+      termsVersion: AVATAR_CONSENT_TERMS_VERSION,
+      acceptedIp,
+      acceptedUserAgent
+    },
+    update: {
+      acceptedByUserId: context.user.id,
+      consentType: data.consentType,
+      permissionBasis: data.permissionBasis,
+      termsVersion: AVATAR_CONSENT_TERMS_VERSION,
+      acceptedIp,
+      acceptedUserAgent,
+      acceptedAt: new Date()
+    }
+  })
+
+  revalidatePath(`/dashboard/avatars/${avatar.id}/studio`)
+  revalidatePath("/dashboard/avatars")
+  return {
+    status: "success",
+    message: "Consent accepted for the current source photo."
   }
 }

@@ -5,6 +5,7 @@ import {
   AvatarStatus,
   WorkspaceRole
 } from "@prisma/client"
+import { getAvatarConsentState, type AvatarConsentRecord } from "@/lib/avatar-consent"
 import { prisma } from "@/lib/prisma"
 import { hasWorkspaceRole } from "@/lib/workspace"
 
@@ -107,6 +108,7 @@ export type AvatarRecord = {
   status: AvatarStatus
   engine: AvatarEngine
   photoAssets: AvatarPhotoAssetRecord[]
+  consentRecords: AvatarConsentRecord[]
   createdAt: Date
   updatedAt: Date
 }
@@ -197,6 +199,32 @@ function parseAvatarPhotoAssets(raw: unknown): AvatarPhotoAssetRecord[] {
   }).filter((item): item is AvatarPhotoAssetRecord => Boolean(item))
 }
 
+function parseAvatarConsentRecords(raw: unknown): AvatarConsentRecord[] {
+  if (!raw || !Array.isArray(raw)) {
+    return []
+  }
+
+  return raw.map(item => {
+    if (!item || typeof item !== "object") {
+      return null
+    }
+
+    const candidate = item as AvatarConsentRecord
+
+    return {
+      id: String(candidate.id ?? ""),
+      avatarAssetId: String(candidate.avatarAssetId ?? ""),
+      acceptedByUserId: String(candidate.acceptedByUserId ?? ""),
+      consentType: candidate.consentType,
+      permissionBasis: candidate.permissionBasis,
+      termsVersion: String(candidate.termsVersion ?? ""),
+      acceptedAt: candidate.acceptedAt,
+      createdAt: candidate.createdAt,
+      updatedAt: candidate.updatedAt
+    }
+  }).filter((item): item is AvatarConsentRecord => Boolean(item))
+}
+
 function mapAvatarRecord(raw: {
   id: string
   workspaceId: string
@@ -217,6 +245,7 @@ function mapAvatarRecord(raw: {
   createdAt: Date
   updatedAt: Date
   photoAssets: unknown
+  consentRecords: unknown
 }): AvatarRecord {
   return {
     id: raw.id,
@@ -236,13 +265,22 @@ function mapAvatarRecord(raw: {
     status: raw.status,
     engine: raw.engine,
     photoAssets: parseAvatarPhotoAssets(raw.photoAssets),
+    consentRecords: parseAvatarConsentRecords(raw.consentRecords),
     createdAt: raw.createdAt,
     updatedAt: raw.updatedAt
   }
 }
 
-export function getCurrentSourcePhoto(avatar: AvatarRecord): AvatarPhotoAssetRecord | null {
+export function getCurrentSourcePhoto(avatar: { photoAssets: AvatarPhotoAssetRecord[] }): AvatarPhotoAssetRecord | null {
   return avatar.photoAssets[0] ?? null
+}
+
+export function hasCurrentPhotoConsent(avatar: AvatarRecord): boolean {
+  const currentPhoto = getCurrentSourcePhoto(avatar)
+  return getAvatarConsentState({
+    currentSourcePhotoId: currentPhoto?.id ?? null,
+    consentRecords: avatar.consentRecords
+  }).isCurrentConsentValid
 }
 
 export function defaultGreeting(): string {
@@ -289,7 +327,7 @@ export function buildSetupChecklist(avatar: AvatarRecord): AvatarSetupCompletion
   const checklist: AvatarSetupChecklistItem[] = [
     { key: "basics", label: "Basics configured", complete: basicsComplete },
     { key: "photo", label: "Photo uploaded", complete: Boolean(getCurrentSourcePhoto(avatar)) },
-    { key: "consent", label: "Consent accepted", complete: false },
+    { key: "consent", label: "Consent accepted", complete: hasCurrentPhotoConsent(avatar) },
     { key: "voice", label: "Voice selected", complete: false },
     { key: "behavior", label: "Behavior configured", complete: behaviorComplete },
     { key: "knowledge", label: "Knowledge added", complete: false },
@@ -352,6 +390,21 @@ export async function fetchAvatarsForWorkspace(workspaceId: string): Promise<Ava
           validationIssues: true
         }
       },
+      consentRecords: {
+        orderBy: { acceptedAt: "desc" },
+        take: 5,
+        select: {
+          id: true,
+          avatarAssetId: true,
+          acceptedByUserId: true,
+          consentType: true,
+          permissionBasis: true,
+          termsVersion: true,
+          acceptedAt: true,
+          createdAt: true,
+          updatedAt: true
+        }
+      },
       createdAt: true,
       updatedAt: true
     }
@@ -404,6 +457,21 @@ export async function fetchAvatarByIdAndWorkspace(
           height: true,
           validationStatus: true,
           validationIssues: true
+        }
+      },
+      consentRecords: {
+        orderBy: { acceptedAt: "desc" },
+        take: 5,
+        select: {
+          id: true,
+          avatarAssetId: true,
+          acceptedByUserId: true,
+          consentType: true,
+          permissionBasis: true,
+          termsVersion: true,
+          acceptedAt: true,
+          createdAt: true,
+          updatedAt: true
         }
       },
       createdAt: true,

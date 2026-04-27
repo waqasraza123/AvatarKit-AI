@@ -81,7 +81,8 @@ export default function AvatarPhotoForm({
     <section className="avatar-step-panel">
       <h3>Photo</h3>
       <p className="avatar-step-description">
-        Upload a clear source photo to unlock the next setup steps.
+        Upload a clear source photo to unlock the next setup steps. Replacing or removing the photo
+        means consent must be accepted again for the new current image.
       </p>
       <div className="avatar-photo-preview-wrap">
         {currentPhoto ? (
@@ -148,6 +149,7 @@ export default function AvatarPhotoForm({
           <li>Avoid sunglasses or heavy obstruction.</li>
           <li>Use a high-resolution image.</li>
           <li>Only upload a photo you are authorized to use.</li>
+          <li>Consent is tied to the current source photo and must be re-accepted after replacement.</li>
           <li>Advanced quality checks are coming in a later phase.</li>
         </ul>
       </div>

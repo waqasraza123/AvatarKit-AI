@@ -2,10 +2,10 @@
 
 [![CI](https://github.com/waqasraza123/AvatarKit-AI/actions/workflows/ci.yml/badge.svg)](https://github.com/waqasraza123/AvatarKit-AI/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Next.js](https://img.shields.io/badge/Next.js-16-black.svg)](https://nextjs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5-blue.svg)](https://www.typescriptlang.org/)
-[![Prisma](https://img.shields.io/badge/Prisma-6-2D3748.svg)](https://www.prisma.io/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-ready-009688.svg)](https://fastapi.tiangolo.com/)
+[![Product: Business Avatars](https://img.shields.io/badge/Product-Business%20Avatars-355cff.svg)](#product-vision)
+[![Safety: Consent First](https://img.shields.io/badge/Safety-Consent%20First-0f5f2d.svg)](#implemented-capabilities)
+[![Architecture: Workspace Scoped](https://img.shields.io/badge/Architecture-Workspace%20Scoped-1a2a4d.svg)](#repository-structure)
+[![Status: Phase 4](https://img.shields.io/badge/Status-Phase%204%20Complete-854d0e.svg)](#current-status)
 
 AvatarKit AI is a phase-driven SaaS foundation for business avatar infrastructure. It is designed to help teams create, verify, configure, and eventually publish talking AI avatars for websites, kiosks, onboarding, sales, support, education, and service workflows.
 
@@ -13,14 +13,15 @@ The product goal is not a generic photo-to-video toy. AvatarKit AI is being buil
 
 ## Current Status
 
-AvatarKit AI is currently implemented through Phase 3:
+AvatarKit AI is currently implemented through Phase 4:
 
 - Phase 0: monorepo foundation, service stubs, database wiring, Docker Compose, and CI baseline
 - Phase 1: local auth, sessions, workspaces, roles, onboarding, and dashboard shell
 - Phase 2: Avatar Studio foundation with avatar drafts, basics, behavior, checklist, and workspace-scoped CRUD
 - Phase 3: avatar source photo upload, validation, private local storage, protected preview route, and photo checklist state
+- Phase 4: consent records, identity-safety acceptance, current-photo consent validity, and consent checklist state
 
-The next planned phase is Phase 4: Consent and Identity Safety.
+The next planned phase is Phase 5: Voice Library foundation.
 
 ## Product Vision
 
@@ -60,20 +61,22 @@ docs                     Product, architecture, phase, and development docs
 - Workspace creation, active workspace switching, and role-aware access control
 - Dashboard shell with workspace-aware route protection
 - Avatar draft creation and workspace-scoped avatar list
-- Avatar Studio with Basics, Photo, and Behavior steps
-- Locked placeholders for future Consent, Voice, Knowledge, Preview, and Publish steps
+- Avatar Studio with Basics, Photo, Consent, and Behavior steps
+- Locked placeholders for future Voice, Knowledge, Preview, and Publish steps
 - Source photo upload for draft/ready/failed avatars
 - Server-side validation for JPG, PNG, and WEBP source photos
 - Local private upload storage under `.data/uploads/avatar-assets`
 - Protected dashboard-only photo preview endpoint
-- Setup checklist state for Basics, Photo, Behavior, and future setup milestones
+- Consent records tied to the current valid source photo
+- Identity-safety consent acceptance for authorized workspace roles
+- Setup checklist state for Basics, Photo, Consent, Behavior, and future setup milestones
 
 ## Intentional Non-Goals In Current Phase
 
 The current implementation does not include:
 
-- consent records or consent acceptance flow
 - real voice provider integration
+- voice cloning consent
 - knowledge base ingestion
 - AI runtime calls
 - LLM, TTS, or STT calls

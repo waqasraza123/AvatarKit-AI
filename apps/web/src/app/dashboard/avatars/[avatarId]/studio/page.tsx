@@ -1,10 +1,17 @@
-import { WorkspaceRole } from "@prisma/client"
+import { AvatarStatus, WorkspaceRole } from "@prisma/client"
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { fetchAvatarByIdAndWorkspace, formatWorkspaceLocalTime, buildSetupChecklist, AVATAR_STUDIO_STEPS, AvatarStudioStep } from "@/lib/avatar"
+import {
+  AVATAR_STUDIO_STEPS,
+  AvatarStudioStep,
+  buildSetupChecklist,
+  fetchAvatarByIdAndWorkspace,
+  formatWorkspaceLocalTime
+} from "@/lib/avatar"
 import { hasWorkspaceRole, getWorkspaceContextForRequest } from "@/lib/workspace"
 import AvatarBasicsForm from "./_components/avatar-basics-form"
 import AvatarBehaviorForm from "./_components/avatar-behavior-form"
+import AvatarConsentForm from "./_components/avatar-consent-form"
 import AvatarPhotoForm from "./_components/avatar-photo-form"
 
 type SearchParams = Promise<{ step?: AvatarStudioStep | string; workspaceId?: string }>
@@ -27,7 +34,6 @@ function normalizeStep(step: AvatarStudioStep | string | undefined): AvatarStudi
   return "basics"
 }
 
-
 function stepStateClass(
   step: AvatarStudioStep,
   activeStep: AvatarStudioStep
@@ -40,17 +46,17 @@ function stepStateClass(
 }
 
 function isStepAvailable(step: AvatarStudioStep): boolean {
-  return step === "basics" || step === "photo" || step === "behavior"
+  return step === "basics" || step === "photo" || step === "consent" || step === "behavior"
 }
 
 function SetupLockedPlaceholder({ stepLabel }: { stepLabel: string }) {
   return (
-      <section className="avatar-step-panel avatar-step-locked">
-        <h3>{stepLabel} is a future phase</h3>
+    <section className="avatar-step-panel avatar-step-locked">
+      <h3>{stepLabel} is a future phase</h3>
       <p>Coming in a later phase. This step remains locked to keep the rollout disciplined.</p>
       <p>
-        This placeholder confirms workspace flow and avoids exposing future controls such as consent collection,
-        voice selection, knowledge attachment, preview actions, and publishing.
+        This placeholder confirms workspace flow and avoids exposing future controls such as voice selection,
+        knowledge attachment, preview actions, and publishing.
       </p>
     </section>
   )
@@ -80,6 +86,7 @@ export default async function AvatarStudioPage({
 
   const activeStep = normalizeStep(rawStep)
   const canEdit = hasWorkspaceRole(context.workspaceMembership.role, WorkspaceRole.OPERATOR)
+  const canAcceptConsent = canEdit && avatar.status !== AvatarStatus.SUSPENDED
   const completion = buildSetupChecklist(avatar)
 
   return (
@@ -99,11 +106,11 @@ export default async function AvatarStudioPage({
           <p>Setup: {completion.percentComplete}% complete</p>
         </div>
         <ul className="setup-checklist">
-        {completion.checklist.map(item => (
-          <li key={item.key} className={item.complete ? "" : "todo"}>
-            <span>{item.complete ? "✓" : "—"}</span>
-            {item.label}
-          </li>
+          {completion.checklist.map(item => (
+            <li key={item.key} className={item.complete ? "" : "todo"}>
+              <span>{item.complete ? "✓" : "—"}</span>
+              {item.label}
+            </li>
           ))}
         </ul>
       </section>
@@ -123,14 +130,14 @@ export default async function AvatarStudioPage({
             ))}
           </nav>
           <p className="form-helper">
-            Preview, voice, knowledge, and publish are placeholders until later phases.
+            Voice, knowledge, preview, and publish are placeholders until later phases.
           </p>
           <p>
             <Link className="avatarkit-link-button" href="/dashboard/avatars">
               Back to all avatars
             </Link>
           </p>
-          </aside>
+        </aside>
         <section className="content-card studio-content">
           {activeStep === "basics" ? (
             <AvatarBasicsForm
@@ -144,13 +151,22 @@ export default async function AvatarStudioPage({
               canEdit={canEdit}
             />
           ) : null}
+          {activeStep === "consent" ? (
+            <AvatarConsentForm
+              avatar={avatar}
+              canAcceptConsent={canAcceptConsent}
+            />
+          ) : null}
           {activeStep === "behavior" ? (
             <AvatarBehaviorForm
               avatar={avatar}
               canEdit={canEdit}
             />
           ) : null}
-          {activeStep !== "basics" && activeStep !== "photo" && activeStep !== "behavior" ? (
+          {activeStep !== "basics" &&
+          activeStep !== "photo" &&
+          activeStep !== "consent" &&
+          activeStep !== "behavior" ? (
             <SetupLockedPlaceholder
               stepLabel={activeStep[0].toUpperCase() + activeStep.slice(1)}
             />

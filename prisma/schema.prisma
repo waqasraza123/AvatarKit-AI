@@ -8,48 +8,51 @@ datasource db {
 }
 
 model User {
-  id          String            @id @default(cuid())
-  email       String            @unique
-  passwordHash String
-  displayName String?
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-  sessions    Session[]
-  memberships WorkspaceMember[]
+  id                     String            @id @default(cuid())
+  email                  String            @unique
+  passwordHash           String
+  displayName            String?
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @updatedAt
+  sessions               Session[]
+  memberships            WorkspaceMember[]
+  acceptedConsentRecords ConsentRecord[]
 }
 
 model Workspace {
-  id        String            @id @default(cuid())
-  name      String
-  slug      String            @unique
-  createdAt DateTime          @default(now())
-  updatedAt DateTime          @updatedAt
-  members   WorkspaceMember[]
-  avatars   Avatar[]
+  id             String            @id @default(cuid())
+  name           String
+  slug           String            @unique
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  members        WorkspaceMember[]
+  avatars        Avatar[]
+  consentRecords ConsentRecord[]
 }
 
 model Avatar {
-  id                   String       @id @default(cuid())
-  workspaceId          String
-  name                 String
-  displayName          String
-  role                 String
-  useCase              String
-  language             String
-  greeting             String
-  tone                 String
-  answerStyle          String
+  id                    String       @id @default(cuid())
+  workspaceId           String
+  name                  String
+  displayName           String
+  role                  String
+  useCase               String
+  language              String
+  greeting              String
+  tone                  String
+  answerStyle           String
   businessInstructions  String
   fallbackMessage      String
   leadCapturePreference String
-  handoffPreference    String
-  status               AvatarStatus @default(DRAFT)
-  engine               AvatarEngine @default(MOCK)
-  createdAt            DateTime     @default(now())
-  updatedAt            DateTime     @updatedAt
+  handoffPreference     String
+  status                AvatarStatus @default(DRAFT)
+  engine                AvatarEngine @default(MOCK)
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  photoAssets          AvatarAsset[] @relation("AvatarPhotoAssets")
+  workspace       Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  photoAssets     AvatarAsset[]   @relation("AvatarPhotoAssets")
+  consentRecords  ConsentRecord[]
 
   @@index([workspaceId])
   @@index([status])
@@ -72,13 +75,41 @@ model AvatarAsset {
   createdAt        DateTime                   @default(now())
   updatedAt        DateTime                   @updatedAt
 
-  workspace Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  avatar    Avatar     @relation("AvatarPhotoAssets", fields: [avatarId], references: [id], onDelete: Cascade)
+  workspace      Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  avatar         Avatar          @relation("AvatarPhotoAssets", fields: [avatarId], references: [id], onDelete: Cascade)
+  consentRecords ConsentRecord[]
 
   @@index([workspaceId])
   @@index([avatarId])
   @@index([avatarId, type, validationStatus])
   @@index([type])
+}
+
+model ConsentRecord {
+  id                String          @id @default(cuid())
+  workspaceId       String
+  avatarId          String
+  avatarAssetId     String
+  acceptedByUserId  String
+  consentType       ConsentType
+  permissionBasis   PermissionBasis
+  termsVersion      String
+  acceptedIp        String?
+  acceptedUserAgent String?
+  acceptedAt        DateTime        @default(now())
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  workspace      Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  avatar         Avatar      @relation(fields: [avatarId], references: [id], onDelete: Cascade)
+  avatarAsset    AvatarAsset @relation(fields: [avatarAssetId], references: [id], onDelete: Restrict)
+  acceptedByUser User        @relation(fields: [acceptedByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([avatarAssetId])
+  @@index([workspaceId])
+  @@index([avatarId])
+  @@index([acceptedByUserId])
+  @@index([avatarId, avatarAssetId])
 }
 
 model WorkspaceMember {
@@ -142,4 +173,18 @@ enum AvatarAssetValidationStatus {
   PENDING
   VALID
   INVALID
+}
+
+enum ConsentType {
+  SELF_IMAGE
+  AUTHORIZED_STAFF
+  BUSINESS_OWNED_CHARACTER
+  LICENSED_SYNTHETIC_AVATAR
+}
+
+enum PermissionBasis {
+  I_OWN_THIS_IMAGE
+  I_HAVE_PERMISSION_FROM_PERSON_SHOWN
+  BRAND_OWNED_FICTIONAL_OR_SYNTHETIC_CHARACTER
+  PROPERLY_LICENSED_AVATAR_IMAGE
 }

@@ -22,6 +22,15 @@
   - uploads are written to `.data/uploads/avatar-assets`, outside source directories
   - source photo bytes are only served through dashboard-authenticated preview endpoint `/api/avatar-assets/[avatarAssetId]/preview`
 - Source photos are private by default until media generation/public publish phases exist.
+- Phase 4 adds workspace-scoped consent and identity safety for source photos:
+  - consent records are stored in `ConsentRecord`
+  - consent is valid only when tied to the current valid `SOURCE_PHOTO` asset
+  - replacing or removing the current source photo makes prior consent incomplete for setup and future publish checks
+  - `VIEWER` roles may view consent state but cannot accept consent
+  - `OWNER`, `ADMIN`, and `OPERATOR` may accept source-photo consent
+  - suspended avatars cannot accept consent
+  - consent acceptance must not publish avatars or enable public runtime behavior
+- Phase 4 must not add voice consent, voice cloning, public identity verification, celebrity detection, face recognition, moderation provider integration, publish flow, public runtime, widget behavior, or provider media generation.
 
 ## Phase 1 decisions (implemented)
 

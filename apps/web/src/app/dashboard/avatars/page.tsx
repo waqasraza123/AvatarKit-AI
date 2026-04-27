@@ -8,7 +8,8 @@ import {
   buildSetupChecklist,
   fetchAvatarsForWorkspace,
   formatWorkspaceLocalTime,
-  getCurrentSourcePhoto
+  getCurrentSourcePhoto,
+  hasCurrentPhotoConsent
 } from "@/lib/avatar"
 import { canEditAvatars } from "@/lib/avatar"
 import { getWorkspaceContextForRequest } from "@/lib/workspace"
@@ -34,6 +35,14 @@ function toProgressText(completion: AvatarSetupCompletion): string {
 
 function formatPhotoState(hasPhoto: boolean): string {
   return hasPhoto ? "Photo added" : "Photo needed"
+}
+
+function formatConsentState(hasPhoto: boolean, hasConsent: boolean): string {
+  if (!hasPhoto) {
+    return "Photo needed before consent"
+  }
+
+  return hasConsent ? "Consent accepted" : "Consent needed"
 }
 
 function ChecklistSummary({ completion }: { completion: AvatarSetupCompletion }) {
@@ -63,6 +72,7 @@ function AvatarCard({
   completion,
   canDelete,
   hasPhoto,
+  hasConsent,
   photoUrl
 }: {
   id: string
@@ -76,6 +86,7 @@ function AvatarCard({
   completion: AvatarSetupCompletion
   canDelete: boolean
   hasPhoto: boolean
+  hasConsent: boolean
   photoUrl?: string
 }) {
   return (
@@ -92,6 +103,9 @@ function AvatarCard({
             <div className="avatar-card-photo-placeholder">No photo uploaded</div>
           )}
           <p className="avatar-photo-label">{formatPhotoState(hasPhoto)}</p>
+          <p className={hasConsent ? "consent-card-state accepted" : "consent-card-state"}>
+            {formatConsentState(hasPhoto, hasConsent)}
+          </p>
         </div>
         <div>
           <p className="hero-copy">{displayName}</p>
@@ -183,6 +197,7 @@ export default async function DashboardAvatarsPage({
             {avatars.map(avatar => {
               const completion = buildSetupChecklist(avatar)
               const currentPhoto = getCurrentSourcePhoto(avatar)
+              const hasConsent = hasCurrentPhotoConsent(avatar)
               return (
                 <AvatarCard
                   key={avatar.id}
@@ -197,6 +212,7 @@ export default async function DashboardAvatarsPage({
                   completion={completion}
                   canDelete={canEdit && avatar.status === "DRAFT"}
                   hasPhoto={Boolean(currentPhoto)}
+                  hasConsent={hasConsent}
                   photoUrl={currentPhoto?.displayUrl}
                 />
               )
@@ -211,7 +227,9 @@ export default async function DashboardAvatarsPage({
             <li key={step}>
               <p>{step[0].toUpperCase() + step.slice(1)}</p>
               <span>
-                {step === "basics" || step === "photo" || step === "behavior" ? "Available" : "Future step"}
+                {step === "basics" || step === "photo" || step === "consent" || step === "behavior"
+                  ? "Available"
+                  : "Future step"}
               </span>
             </li>
           ))}

@@ -30,10 +30,13 @@ auth, workspace isolation, dashboard shell, and future avatar/knowledge/runtime 
 - `AvatarAsset`
 - `AvatarAssetType` enum
 - `AvatarAssetValidationStatus` enum
+- `ConsentRecord`
+- `ConsentType` enum
+- `PermissionBasis` enum
 
 ## Current Phase
 
-Phase 3 is now implemented: Avatar Photo Upload and Validation.
+Phase 4 is now implemented: Consent and Identity Safety.
 
 ## Completed Major Slices
 
@@ -54,6 +57,10 @@ Phase 3 is now implemented: Avatar Photo Upload and Validation.
 - Protected server endpoint for photo preview delivery.
 - Setup completion checklist foundation for future step tracking.
 - Avatar list card photo state rendering for onboarding signal.
+- Consent data model tied to the current valid source photo asset.
+- Consent acceptance server action with workspace, role, source-photo, and suspended-avatar guards.
+- Functional Avatar Studio Consent step with identity-safety statements and terms version display.
+- Setup checklist and avatar cards now show valid current-photo consent state.
 
 ## Important Decisions
 
@@ -61,17 +68,19 @@ Phase 3 is now implemented: Avatar Photo Upload and Validation.
 - `WorkspaceRole` remains explicit and role checks are introduced through utility helpers for future RBAC.
 - Workspace access is never granted for a `workspaceId` not present in memberships.
 - Avatar operations are workspace scoped at every boundary, including by `avatarId` lookup.
+- Consent validity is tied to `ConsentRecord.avatarAssetId` matching the latest valid `SOURCE_PHOTO` asset for the avatar.
+- Photo replacement/removal invalidates consent for checklist and UI purposes without deleting prior consent records.
 
 ## Non-Negotiable Rules (still active)
 
 - Preserve existing architecture conventions and phase boundaries.
 - Do not add production logic for future phases ahead of their designated order.
 - Strong validation at request/action boundaries.
-- No future feature flows (avatar, consent, voice, knowledge, runtime, billing, leads, widget, etc.) in this phase.
+- No future feature flows (voice, knowledge, runtime, billing, leads, widget, publishing, media generation, etc.) in this phase.
 
 ## Current Next Step
 
-Phase 4: Consent and Identity Safety.
+Phase 5: Voice Library foundation, only after Phase 4 manual verification is approved.
 
 ## Verification Commands (manual, user-run)
 
