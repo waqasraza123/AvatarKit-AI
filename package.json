@@ -1,7 +1,25 @@
 {
   "name": "avatarkit-ai",
   "version": "0.0.0",
+  "description": "Phase-driven business avatar infrastructure for creating, validating, and operating workspace-scoped AI avatars.",
   "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/waqasraza123/AvatarKit-AI.git"
+  },
+  "keywords": [
+    "avatar",
+    "ai-avatar",
+    "avatar-studio",
+    "nextjs",
+    "typescript",
+    "prisma",
+    "fastapi",
+    "saas",
+    "workspace",
+    "ai"
+  ],
   "packageManager": "pnpm@10.11.1",
   "scripts": {
     "build": "turbo build",
