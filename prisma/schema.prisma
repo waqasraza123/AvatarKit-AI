@@ -1,0 +1,145 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String            @id @default(cuid())
+  email       String            @unique
+  passwordHash String
+  displayName String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  sessions    Session[]
+  memberships WorkspaceMember[]
+}
+
+model Workspace {
+  id        String            @id @default(cuid())
+  name      String
+  slug      String            @unique
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  members   WorkspaceMember[]
+  avatars   Avatar[]
+}
+
+model Avatar {
+  id                   String       @id @default(cuid())
+  workspaceId          String
+  name                 String
+  displayName          String
+  role                 String
+  useCase              String
+  language             String
+  greeting             String
+  tone                 String
+  answerStyle          String
+  businessInstructions  String
+  fallbackMessage      String
+  leadCapturePreference String
+  handoffPreference    String
+  status               AvatarStatus @default(DRAFT)
+  engine               AvatarEngine @default(MOCK)
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  photoAssets          AvatarAsset[] @relation("AvatarPhotoAssets")
+
+  @@index([workspaceId])
+  @@index([status])
+}
+
+model AvatarAsset {
+  id               String                     @id @default(cuid())
+  workspaceId      String
+  avatarId         String
+  type             AvatarAssetType
+  storageKey       String
+  displayUrl       String
+  originalFileName String
+  mimeType         String
+  sizeBytes        Int
+  width            Int
+  height           Int
+  validationStatus AvatarAssetValidationStatus
+  validationIssues Json
+  createdAt        DateTime                   @default(now())
+  updatedAt        DateTime                   @updatedAt
+
+  workspace Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  avatar    Avatar     @relation("AvatarPhotoAssets", fields: [avatarId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([avatarId])
+  @@index([avatarId, type, validationStatus])
+  @@index([type])
+}
+
+model WorkspaceMember {
+  id          String        @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        WorkspaceRole
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  OPERATOR
+  VIEWER
+}
+
+enum AvatarStatus {
+  DRAFT
+  PROCESSING
+  READY
+  PUBLISHED
+  SUSPENDED
+  FAILED
+}
+
+enum AvatarEngine {
+  DID
+  TAVUS
+  SIMLI
+  SELF_HOSTED
+  MOCK
+}
+
+enum AvatarAssetType {
+  SOURCE_PHOTO
+  CROPPED_PHOTO
+  PREVIEW_PHOTO
+}
+
+enum AvatarAssetValidationStatus {
+  PENDING
+  VALID
+  INVALID
+}

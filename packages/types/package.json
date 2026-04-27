@@ -1,0 +1,17 @@
+{
+  "name": "@avatarkit/types",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "echo \"No tests configured for @avatarkit/types in Phase 0\""
+  },
+  "dependencies": {
+    "zod": "^4.1.12"
+  }
+}

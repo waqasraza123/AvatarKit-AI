@@ -1,0 +1,26 @@
+{
+  "name": "@avatarkit/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "next build",
+    "dev": "next dev --port ${WEB_PORT:-3000}",
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "echo \"No tests configured for @avatarkit/web in Phase 0\""
+  },
+  "dependencies": {
+    "@prisma/client": "^6.18.0",
+    "@avatarkit/types": "workspace:*",
+    "@avatarkit/ui": "workspace:*",
+    "next": "^16.0.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2"
+  }
+}

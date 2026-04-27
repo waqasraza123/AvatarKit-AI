@@ -1,0 +1,34 @@
+{
+  "name": "avatarkit-ai",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.11.1",
+  "scripts": {
+    "build": "turbo build",
+    "dev": "turbo dev",
+    "dev:web": "pnpm --filter @avatarkit/web dev",
+    "dev:api": "pnpm --filter @avatarkit/api dev",
+    "dev:ai-runtime": "python3 -m uvicorn app.main:app --reload --app-dir services/ai-runtime",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "test": "turbo test",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "docker:up": "docker compose up -d postgres redis",
+    "docker:down": "docker compose down"
+  },
+  "devDependencies": {
+    "@next/eslint-plugin-next": "^16.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.48.0",
+    "@typescript-eslint/parser": "^8.48.0",
+    "eslint": "^9.39.0",
+    "eslint-config-next": "^16.0.0",
+    "prisma": "^6.18.0",
+    "turbo": "^2.8.0",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.18.0",
+    "zod": "^4.1.12"
+  }
+}
