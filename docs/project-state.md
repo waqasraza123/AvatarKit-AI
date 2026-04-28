@@ -52,6 +52,8 @@ auth, workspace isolation, dashboard shell, and future avatar/knowledge/runtime 
   - `RealtimeSession`
   - `RealtimeSessionChannel` enum
   - `RealtimeSessionStatus` enum
+  - `ApiKey`
+  - `WebhookEndpoint`
   - `Lead`
   - `LeadStatus` enum
   - `LeadSource` enum
@@ -69,7 +71,7 @@ auth, workspace isolation, dashboard shell, and future avatar/knowledge/runtime 
 
 ## Current Phase
 
-Phases 17 and 18 are now implemented pending manual approval: Knowledge Gap Detection and Realtime Streaming v1.
+Phase 19 is now implemented pending manual approval: Developer SDK and Public API.
 
 ## Completed Major Slices
 
@@ -179,6 +181,13 @@ Phases 17 and 18 are now implemented pending manual approval: Knowledge Gap Dete
 - Avatar Studio Preview keeps standard request/response mode and adds optional realtime mode with start/end, status, text message, final answer, media events, and errors.
 - Public widget runtime attempts realtime text sessions and falls back to existing request/response if realtime fails.
 - Runtime traces now include realtime session, message, event, fallback, expiry, and connection failure events.
+- First-class `ApiKey` model now stores workspace-scoped, prefix-identifiable, hashed, revocable API keys with scopes and last-used metadata.
+- First-class `WebhookEndpoint` model now stores workspace-scoped webhook endpoint registrations with event selections, signing-secret prefixes/hashes, and revocation metadata.
+- `/dashboard/developers` is a real developer settings surface for API keys, webhook endpoints, and public API route discovery.
+- Public API v1 routes exist under `/api/public/v1` for avatar config, conversation start, conversation message, conversation status, and lead submission.
+- Public API runtime persists conversations with `ConversationChannel.API` and leads with `LeadSource.API`.
+- Public API runtime reuses the private TypeScript-to-Python runtime path and records messages, runtime traces, usage events, safety events, and knowledge gaps.
+- `packages/sdk` is the first React SDK package with provider, client, session hook, lead submission, and talking avatar component.
 
 ## Important Decisions
 
@@ -239,17 +248,22 @@ Phases 17 and 18 are now implemented pending manual approval: Knowledge Gap Dete
 - Realtime v1 does not fake token streaming; it emits final answers and status events when partial output is unavailable.
 - Widget realtime must preserve published-avatar eligibility and allowed-domain checks.
 - Active realtime sessions expire after 30 minutes without recorded activity.
+- Phase 19 API keys are never stored in plaintext; only creation responses show raw keys.
+- Phase 19 public API keys are workspace-scoped and use explicit scopes for avatar config, conversation write/read, and lead submission.
+- Phase 19 public API conversations use `ConversationChannel.API`; widget domain allowlists remain widget-only.
+- Phase 19 webhook endpoint registration stores signing secret hashes and documents HMAC signing semantics; delivery workers remain deferred.
+- Phase 19 browser SDK usage must go through an application-owned proxy or short-lived server-issued token; raw `avk_live_...` keys are trusted-server credentials only.
 
 ## Non-Negotiable Rules (still active)
 
 - Preserve existing architecture conventions and phase boundaries.
 - Do not add production logic for future phases ahead of their designated order.
 - Strong validation at request/action boundaries.
-- No future feature flows beyond Phase 18 realtime streaming v1: no Phase 19 public API/SDK, Stripe, checkout, subscriptions, invoices, payment methods, billing portal, hard usage blocking, paid plan upgrades, inline widget voice input upload, continuous listening, WebRTC avatar calls, barge-in/interruption handling, kiosk mode, operator handoff workflow, CRM sync, notifications, webhooks, 3D rendering, voice cloning, custom voice upload, public identity verification, KYC, biometric face recognition, external celebrity detection, or self-hosted avatar engine.
+- No future feature flows beyond Phase 19 public API/SDK: no Stripe, checkout, subscriptions, invoices, payment methods, billing portal, hard usage blocking, paid plan upgrades, inline widget voice input upload, continuous listening, WebRTC avatar calls, barge-in/interruption handling, kiosk mode, operator handoff workflow, CRM sync, notifications, webhook delivery workers, 3D rendering, voice cloning, custom voice upload, public identity verification, KYC, biometric face recognition, external celebrity detection, or self-hosted avatar engine.
 
 ## Current Next Step
 
-Phases 17 and 18 implementation are pending manual approval in `docs/development.md`.
+Phase 19 implementation is pending manual approval in `docs/development.md` and `docs/development/phase-19-public-api-sdk.md`.
 
 ## Verification Commands (manual, user-run)
 

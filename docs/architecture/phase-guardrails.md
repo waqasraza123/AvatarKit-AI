@@ -179,6 +179,18 @@
   - Runtime traces and non-billing usage events may record realtime session, message, fallback, expiry, and event activity.
   - Inactive realtime sessions may expire and require a new session before more messages are accepted.
 - Phase 18 must not add WebRTC avatar calls, continuous listening, barge-in/interruption handling, full live agent handoff, true low-latency video streaming, public SDK/API phase work, billing foundation, admin observability expansion, self-hosted GPU runtime, 3D rendering, or fake partial-token streaming.
+- Phase 19 adds developer SDK and public API v1 only:
+  - API keys are workspace-scoped, hashed at rest, prefix-identifiable, revocable, and shown only once at creation.
+  - API keys are managed by `OWNER` and `ADMIN` roles; lower roles may inspect developer settings only.
+  - Public API routes must require Bearer API keys and enforce workspace ownership before reading avatars, creating conversations, sending messages, or submitting leads.
+  - Public API runtime uses `ConversationChannel.API` and must not reuse widget domain checks or widget conversation channels.
+  - Public API messages must flow through the TypeScript route boundary and existing private runtime path; browser or SDK code must not call Python or provider APIs directly.
+  - Public API routes must preserve safety event, usage event, runtime trace, and knowledge gap recording where applicable.
+  - API lead capture uses `LeadSource.API`, reuses central lead validation and safety checks, and keeps one primary lead per conversation.
+  - Webhook endpoints are workspace-scoped, revocable, and store signing secret hashes plus non-secret prefixes.
+  - Webhook signatures use HMAC-SHA256 over `<timestamp>.<raw_json_body>`.
+  - The SDK package is a thin React/client wrapper over public API v1 and must not embed private provider credentials.
+- Phase 19 must not add billing enforcement, Stripe, public arbitrary avatar/knowledge mutation, webhook delivery workers, CRM integrations, browser-safe publishable keys, public media-token APIs for API-channel media, WebRTC calls, 3D rendering, or self-hosted runtime work.
 
 ## Phase 1 decisions (implemented)
 

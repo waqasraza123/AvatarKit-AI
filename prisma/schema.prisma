@@ -19,6 +19,10 @@ model User {
   acceptedConsentRecords ConsentRecord[]
   reviewedSafetyEvents   SafetyEvent[]
   resolvedKnowledgeGaps  KnowledgeGap[]
+  createdApiKeys         ApiKey[]           @relation("ApiKeyCreatedBy")
+  revokedApiKeys         ApiKey[]           @relation("ApiKeyRevokedBy")
+  createdWebhookEndpoints WebhookEndpoint[] @relation("WebhookEndpointCreatedBy")
+  revokedWebhookEndpoints WebhookEndpoint[] @relation("WebhookEndpointRevokedBy")
 }
 
 model Workspace {
@@ -39,6 +43,8 @@ model Workspace {
   safetyEvents    SafetyEvent[]
   knowledgeGaps   KnowledgeGap[]
   realtimeSessions RealtimeSession[]
+  apiKeys          ApiKey[]
+  webhookEndpoints WebhookEndpoint[]
 }
 
 model Avatar {
@@ -432,6 +438,53 @@ model RealtimeSession {
   @@index([workspaceId, status, lastEventAt])
 }
 
+model ApiKey {
+  id              String    @id @default(cuid())
+  workspaceId     String
+  name            String
+  prefix          String    @unique
+  keyHash         String    @unique
+  scopes          String[]
+  createdByUserId String
+  revokedByUserId String?
+  lastUsedAt      DateTime?
+  revokedAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdByUser User      @relation("ApiKeyCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  revokedByUser User?     @relation("ApiKeyRevokedBy", fields: [revokedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@index([workspaceId, revokedAt])
+  @@index([createdByUserId])
+}
+
+model WebhookEndpoint {
+  id                String    @id @default(cuid())
+  workspaceId       String
+  url               String
+  description       String?
+  events            String[]
+  signingSecretHash String @unique
+  signingSecretPrefix String @unique
+  createdByUserId   String
+  revokedByUserId   String?
+  lastDeliveryAt    DateTime?
+  revokedAt         DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdByUser User      @relation("WebhookEndpointCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  revokedByUser User?     @relation("WebhookEndpointRevokedBy", fields: [revokedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@index([workspaceId, revokedAt])
+  @@index([createdByUserId])
+}
+
 model ConsentRecord {
   id                String          @id @default(cuid())
   workspaceId       String
@@ -637,6 +690,7 @@ enum SafetySource {
   AVATAR_SETUP
   DASHBOARD_PREVIEW
   WIDGET_RUNTIME
+  API_RUNTIME
   LEAD_CAPTURE
   SYSTEM
 }
@@ -661,6 +715,7 @@ enum KnowledgeGapReason {
 enum KnowledgeGapSource {
   DASHBOARD_PREVIEW
   WIDGET_RUNTIME
+  API_RUNTIME
   SYSTEM
 }
 

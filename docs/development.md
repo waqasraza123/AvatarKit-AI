@@ -1,5 +1,21 @@
 # Development
 
+## Phase 19 - Developer SDK and Public API
+
+Detailed Phase 19 integration notes live in `docs/development/phase-19-public-api-sdk.md`.
+
+Phase 19 adds:
+
+- dashboard developer settings at `/dashboard/developers`
+- hashed, revocable workspace API keys
+- webhook endpoint registration and signing-secret semantics
+- public API v1 routes under `/api/public/v1`
+- `ConversationChannel.API` runtime persistence
+- `LeadSource.API` lead capture
+- first React SDK package in `packages/sdk`
+
+Verification was intentionally not run for the implementation pass requested on April 28, 2026. Before approving this phase manually, generate Prisma client, apply a migration, and follow the checklist in `docs/development/phase-19-public-api-sdk.md`.
+
 ## Phase 0 Foundation (completed baseline)
 
 - Monorepo scaffold, Next.js web shell, API/AI service entrypoints, Postgres/Redis compose setup, CI baseline, and Prisma client wiring.

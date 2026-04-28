@@ -49,3 +49,51 @@ export const authSessionSchema = z.object({
 })
 
 export type AuthSession = z.infer<typeof authSessionSchema>
+
+export const avatarKitOutputModeSchema = z.enum(["text", "audio", "video"])
+
+export type AvatarKitOutputMode = z.infer<typeof avatarKitOutputModeSchema>
+
+export const publicApiAvatarConfigSchema = z.object({
+  id: z.string(),
+  displayName: z.string(),
+  role: z.string(),
+  useCase: z.string(),
+  language: z.string(),
+  status: z.string(),
+  supportedOutputModes: z.array(avatarKitOutputModeSchema),
+  defaultOutputMode: avatarKitOutputModeSchema,
+  publishedAt: z.string().datetime().nullable()
+})
+
+export type PublicApiAvatarConfig = z.infer<typeof publicApiAvatarConfigSchema>
+
+export const publicApiConversationSchema = z.object({
+  conversationId: z.string(),
+  avatarId: z.string(),
+  visitorId: z.string().nullable(),
+  status: z.string(),
+  createdAt: z.string().datetime()
+})
+
+export type PublicApiConversation = z.infer<typeof publicApiConversationSchema>
+
+export const publicApiMessageSchema = z.object({
+  id: z.string(),
+  content: z.string(),
+  audioUrl: z.string().nullable(),
+  videoUrl: z.string().nullable(),
+  outputMode: avatarKitOutputModeSchema,
+  runtimeStatus: z.string(),
+  leadCapture: z.unknown()
+})
+
+export type PublicApiMessage = z.infer<typeof publicApiMessageSchema>
+
+export const publicApiErrorSchema = z.object({
+  status: z.literal("error"),
+  code: z.string(),
+  message: z.string()
+})
+
+export type PublicApiError = z.infer<typeof publicApiErrorSchema>

@@ -12,6 +12,7 @@ const navigationItems = [
   { label: "Embed", href: "/dashboard/embed" },
   { label: "Usage", href: "/dashboard/usage" },
   { label: "Safety", href: "/dashboard/safety" },
+  { label: "Developers", href: "/dashboard/developers" },
   { label: "Settings", href: "/dashboard/settings" }
 ]
 
