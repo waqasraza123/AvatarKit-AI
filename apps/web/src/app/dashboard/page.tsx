@@ -1,4 +1,6 @@
 import { DashboardPlaceholder } from "./_components/dashboard-placeholder"
+import Link from "next/link"
+import { fetchConversationOverview } from "@/lib/conversation"
 import { getWorkspaceContextForRequest } from "@/lib/workspace"
 
 const moduleCards = [
@@ -12,7 +14,7 @@ const moduleCards = [
   },
   {
     title: "Leads",
-    description: "Lead capture, qualification, and assignment will appear here."
+    description: "Captured widget contact requests and simple lead status review."
   },
   {
     title: "Usage",
@@ -35,6 +37,8 @@ export default async function DashboardPage({
   if (!context) {
     return null
   }
+
+  const conversationOverview = await fetchConversationOverview(context.workspace.id)
 
   return (
     <main className="content-area">
@@ -67,6 +71,67 @@ export default async function DashboardPage({
           </li>
           <li>4. Configure knowledge and usage once available</li>
         </ul>
+      </section>
+      <section className="content-card">
+        <h2>Conversation overview</h2>
+        <div className="conversation-summary-grid">
+          <div>
+            <span>{conversationOverview.totalConversations}</span>
+            <p>Total conversations</p>
+          </div>
+          <div>
+            <span>{conversationOverview.dashboardPreviewConversations}</span>
+            <p>Dashboard preview conversations</p>
+          </div>
+          <div>
+            <span>{conversationOverview.failedConversations}</span>
+            <p>Failed conversations</p>
+          </div>
+          <div>
+            <span>{conversationOverview.recentConversations.length}</span>
+            <p>Recent sessions</p>
+          </div>
+          <div>
+            <span>{conversationOverview.newLeads}</span>
+            <p>New leads</p>
+          </div>
+          <div>
+            <span>{conversationOverview.totalLeads}</span>
+            <p>Total leads</p>
+          </div>
+        </div>
+        <div className="avatar-card-actions conversation-overview-actions">
+          <Link className="avatarkit-link-button" href="/dashboard/conversations">
+            Open conversation list
+          </Link>
+          <Link className="avatarkit-link-button" href="/dashboard/leads">
+            Open lead dashboard
+          </Link>
+        </div>
+        {conversationOverview.recentConversations.length === 0 ? (
+          <p className="avatar-empty-state">
+            No conversations yet. Use Avatar Studio Preview to generate review transcripts in this workspace.
+          </p>
+        ) : (
+          <div className="conversation-overview-list">
+            {conversationOverview.recentConversations.map(item => (
+              <article className="conversation-overview-item" key={item.id}>
+                <p className="eyebrow">{item.id.slice(0, 8)}</p>
+                <p>{item.avatarName}</p>
+                <p className="avatar-meta">
+                  {item.channel} · {item.status} · {item.messageCount} messages
+                </p>
+                <p className="avatar-meta">
+                  Last update {item.updatedAt}
+                </p>
+                <p>{item.latestMessagePreview}</p>
+                <Link className="avatarkit-link-button" href={`/dashboard/conversations/${item.id}`}>
+                  Open conversation
+                </Link>
+              </article>
+            ))}
+          </div>
+        )}
       </section>
     </main>
   )

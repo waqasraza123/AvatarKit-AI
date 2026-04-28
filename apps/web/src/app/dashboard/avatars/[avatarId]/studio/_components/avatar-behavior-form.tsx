@@ -82,7 +82,8 @@ export default function AvatarBehaviorForm({
       <input type="hidden" name="avatarId" value={avatar.id} />
       <h3>Behavior</h3>
       <p className="avatar-step-description">
-        Behavior defines the conversational personality and fallback rules for this avatar.
+        Behavior defines the conversational personality and configuration rules for future runtime phases.
+        Lead capture and handoff remain saved preferences only in this phase.
       </p>
       <label>
         Greeting

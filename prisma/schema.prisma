@@ -27,12 +27,18 @@ model Workspace {
   updatedAt      DateTime          @updatedAt
   members        WorkspaceMember[]
   avatars        Avatar[]
+  leads          Lead[]
   consentRecords ConsentRecord[]
+  knowledgeSources KnowledgeSource[]
+  knowledgeChunks  KnowledgeChunk[]
+  widgetSettings  WidgetSettings[]
+  allowedDomains  AllowedDomain[]
 }
 
 model Avatar {
   id                    String       @id @default(cuid())
   workspaceId           String
+  voiceId               String?
   name                  String
   displayName           String
   role                  String
@@ -47,15 +53,111 @@ model Avatar {
   handoffPreference     String
   status                AvatarStatus @default(DRAFT)
   engine                AvatarEngine @default(MOCK)
+  publishedAt           DateTime?
   createdAt             DateTime     @default(now())
   updatedAt             DateTime     @updatedAt
 
   workspace       Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  voice           Voice?          @relation(fields: [voiceId], references: [id], onDelete: SetNull)
   photoAssets     AvatarAsset[]   @relation("AvatarPhotoAssets")
   consentRecords  ConsentRecord[]
+  widgetSettings  WidgetSettings[]
+  leads           Lead[]
 
   @@index([workspaceId])
+  @@index([voiceId])
   @@index([status])
+}
+
+model WidgetSettings {
+  id              String         @id @default(cuid())
+  workspaceId     String
+  avatarId        String
+  theme           WidgetTheme    @default(LIGHT)
+  position        WidgetPosition @default(BOTTOM_RIGHT)
+  greetingEnabled Boolean        @default(true)
+  greetingText    String
+  primaryColor    String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  avatar    Avatar    @relation(fields: [avatarId], references: [id], onDelete: Cascade)
+
+  @@unique([avatarId])
+  @@index([workspaceId])
+  @@index([workspaceId, avatarId])
+}
+
+model AllowedDomain {
+  id          String   @id @default(cuid())
+  workspaceId String
+  domain      String
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, domain])
+  @@index([workspaceId])
+}
+
+model Voice {
+  id              String        @id @default(cuid())
+  provider        VoiceProvider
+  providerVoiceId String
+  name            String
+  language        String
+  style           String
+  presentationStyle String
+  previewUrl      String?
+  status          VoiceStatus   @default(ACTIVE)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  avatars Avatar[]
+
+  @@unique([provider, providerVoiceId])
+  @@index([status])
+  @@index([language])
+}
+
+model KnowledgeSource {
+  id         String              @id @default(cuid())
+  workspaceId String
+  title      String
+  type       KnowledgeSourceType
+  status     KnowledgeStatus     @default(PENDING)
+  rawText    String?
+  sourceUrl  String?
+  fileUrl    String?
+  metadata   Json?
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+  archivedAt DateTime?
+
+  workspace Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  chunks    KnowledgeChunk[]
+
+  @@index([workspaceId])
+  @@index([workspaceId, status])
+  @@index([workspaceId, type])
+}
+
+model KnowledgeChunk {
+  id          String   @id @default(cuid())
+  workspaceId String
+  sourceId    String
+  content     String
+  position    Int
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  source    KnowledgeSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceId, position])
+  @@index([workspaceId])
+  @@index([sourceId])
 }
 
 model AvatarAsset {
@@ -83,6 +185,98 @@ model AvatarAsset {
   @@index([avatarId])
   @@index([avatarId, type, validationStatus])
   @@index([type])
+}
+
+model Conversation {
+  id String @id @default(cuid())
+  workspaceId String
+  avatarId String
+  visitorId String?
+  channel ConversationChannel
+  status ConversationStatus @default(ACTIVE)
+  summary String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  endedAt DateTime?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  avatar Avatar @relation(fields: [avatarId], references: [id], onDelete: Cascade)
+  messages Message[]
+  runtimeTraces RuntimeTrace[]
+  lead Lead?
+
+  @@index([workspaceId])
+  @@index([avatarId])
+  @@index([workspaceId, channel])
+  @@index([workspaceId, status])
+  @@index([avatarId, channel, status])
+  @@index([updatedAt])
+}
+
+model Message {
+  id String @id @default(cuid())
+  conversationId String
+  role MessageRole
+  content String
+  audioUrl String?
+  videoUrl String?
+  metadata Json?
+  createdAt DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([role])
+  @@index([createdAt])
+}
+
+model Lead {
+  id             String     @id @default(cuid())
+  workspaceId    String
+  conversationId String     @unique
+  avatarId       String?
+  name           String?
+  email          String?
+  phone          String?
+  message        String?
+  source         LeadSource
+  status         LeadStatus @default(NEW)
+  metadata       Json?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  workspace    Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  avatar       Avatar?      @relation(fields: [avatarId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@index([avatarId])
+  @@index([workspaceId, status])
+  @@index([workspaceId, source])
+  @@index([createdAt])
+}
+
+model RuntimeTrace {
+  id String @id @default(cuid())
+  workspaceId String
+  avatarId String?
+  conversationId String?
+  eventType String
+  durationMs Int?
+  status RuntimeTraceStatus
+  metadata Json?
+  createdAt DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  avatar Avatar? @relation(fields: [avatarId], references: [id], onDelete: SetNull)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@index([avatarId])
+  @@index([conversationId])
+  @@index([eventType])
+  @@index([status])
+  @@index([createdAt])
 }
 
 model ConsentRecord {
@@ -163,16 +357,97 @@ enum AvatarEngine {
   MOCK
 }
 
+enum WidgetTheme {
+  LIGHT
+}
+
+enum WidgetPosition {
+  BOTTOM_RIGHT
+  BOTTOM_LEFT
+}
+
 enum AvatarAssetType {
   SOURCE_PHOTO
   CROPPED_PHOTO
   PREVIEW_PHOTO
+  GENERATED_SPEECH_AUDIO
+  GENERATED_AVATAR_VIDEO
 }
 
 enum AvatarAssetValidationStatus {
   PENDING
   VALID
   INVALID
+}
+
+enum VoiceProvider {
+  MOCK
+  OPENAI
+  ELEVENLABS
+  AZURE
+  CUSTOM
+}
+
+enum VoiceStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ConversationChannel {
+  DASHBOARD_PREVIEW
+  WIDGET
+  KIOSK
+  API
+}
+
+enum ConversationStatus {
+  ACTIVE
+  ENDED
+  HANDOFF_REQUESTED
+  FAILED
+}
+
+enum MessageRole {
+  VISITOR
+  AVATAR
+  SYSTEM
+  OPERATOR
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  CLOSED
+  SPAM
+}
+
+enum LeadSource {
+  WIDGET
+  DASHBOARD_PREVIEW
+  KIOSK
+  API
+}
+
+enum RuntimeTraceStatus {
+  STARTED
+  SUCCESS
+  FAILURE
+  SKIPPED
+}
+
+enum KnowledgeSourceType {
+  FAQ
+  TEXT
+  WEBSITE
+  PDF
+}
+
+enum KnowledgeStatus {
+  PENDING
+  READY
+  FAILED
+  ARCHIVED
 }
 
 enum ConsentType {

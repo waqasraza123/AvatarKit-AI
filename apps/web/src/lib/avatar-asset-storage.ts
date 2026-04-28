@@ -34,6 +34,36 @@ export function buildAvatarPhotoDisplayUrl(assetId: string): string {
   return `/api/avatar-assets/${assetId}/preview`
 }
 
+export function buildAvatarAudioStorageKey(params: {
+  workspaceId: string
+  avatarId: string
+  conversationId: string
+  messageId: string
+  assetId: string
+  fileExtension: string
+}): string {
+  return `workspaces/${params.workspaceId}/avatars/${params.avatarId}/conversations/${params.conversationId}/messages/${params.messageId}/audio/${params.assetId}.${params.fileExtension}`
+}
+
+export function buildAvatarAudioDisplayUrl(assetId: string): string {
+  return `/api/avatar-assets/${assetId}/preview`
+}
+
+export function buildAvatarVideoStorageKey(params: {
+  workspaceId: string
+  avatarId: string
+  conversationId: string
+  messageId: string
+  assetId: string
+  fileExtension: string
+}): string {
+  return `workspaces/${params.workspaceId}/avatars/${params.avatarId}/conversations/${params.conversationId}/messages/${params.messageId}/video/${params.assetId}.${params.fileExtension}`
+}
+
+export function buildAvatarVideoDisplayUrl(assetId: string): string {
+  return `/api/avatar-assets/${assetId}/preview`
+}
+
 export function resolveAvatarAssetPath(storageKey: string): string {
   assertSafeStorageKey(storageKey)
   return path.join(storageRoot, storageKey)

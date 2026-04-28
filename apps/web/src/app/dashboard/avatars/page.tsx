@@ -5,10 +5,12 @@ import {
   AVATAR_STUDIO_STEPS,
   AvatarSetupCompletion,
   AvatarStudioStep,
+  buildAvatarPublishReadiness,
   buildSetupChecklist,
   fetchAvatarsForWorkspace,
   formatWorkspaceLocalTime,
   getCurrentSourcePhoto,
+  hasActiveSelectedVoice,
   hasCurrentPhotoConsent
 } from "@/lib/avatar"
 import { canEditAvatars } from "@/lib/avatar"
@@ -45,6 +47,26 @@ function formatConsentState(hasPhoto: boolean, hasConsent: boolean): string {
   return hasConsent ? "Consent accepted" : "Consent needed"
 }
 
+function formatVoiceState(hasVoice: boolean, voiceName: string | undefined): string {
+  return hasVoice ? voiceName || "Voice selected" : "Voice needed"
+}
+
+function formatCardSetupState(status: string, isPublishReady: boolean): string {
+  if (status === "PUBLISHED") {
+    return "Published"
+  }
+
+  if (status === "SUSPENDED") {
+    return "Suspended"
+  }
+
+  if (status === "FAILED") {
+    return "Failed"
+  }
+
+  return isPublishReady ? "Ready to publish" : "Setup incomplete"
+}
+
 function ChecklistSummary({ completion }: { completion: AvatarSetupCompletion }) {
   return (
     <ul className="setup-checklist setup-checklist-summary">
@@ -68,11 +90,14 @@ function AvatarCard({
   useCase,
   language,
   status,
+  setupState,
   updatedAt,
   completion,
   canDelete,
   hasPhoto,
   hasConsent,
+  hasVoice,
+  voiceName,
   photoUrl
 }: {
   id: string
@@ -82,11 +107,14 @@ function AvatarCard({
   useCase: string
   language: string
   status: string
+  setupState: string
   updatedAt: string
   completion: AvatarSetupCompletion
   canDelete: boolean
   hasPhoto: boolean
   hasConsent: boolean
+  hasVoice: boolean
+  voiceName?: string
   photoUrl?: string
 }) {
   return (
@@ -106,6 +134,9 @@ function AvatarCard({
           <p className={hasConsent ? "consent-card-state accepted" : "consent-card-state"}>
             {formatConsentState(hasPhoto, hasConsent)}
           </p>
+          <p className={hasVoice ? "voice-card-state selected" : "voice-card-state"}>
+            {formatVoiceState(hasVoice, voiceName)}
+          </p>
         </div>
         <div>
           <p className="hero-copy">{displayName}</p>
@@ -116,21 +147,28 @@ function AvatarCard({
         </div>
         <p className="status-pill">{status}</p>
       </div>
+      <p className="avatar-meta">Publish state: {setupState}</p>
       <p className="avatar-meta">Language: {language}</p>
       <p className="avatar-meta">Last updated: {updatedAt}</p>
       <p>{toProgressText(completion)}</p>
       <ChecklistSummary completion={completion} />
-      <div className="avatar-card-actions">
-        <Link className="avatarkit-link-button" href={`/dashboard/avatars/${id}/studio`}>
-          Edit
-        </Link>
-        <button className="avatarkit-button avatarkit-button-secondary" type="button" disabled>
-          Preview (coming in later phase)
-        </button>
-        {canDelete ? (
-          <form action={deleteAvatarDraftAction}>
-            <input type="hidden" name="avatarId" value={id} />
-            <button className="avatarkit-button avatarkit-button-secondary" type="submit">
+          <div className="avatar-card-actions">
+              <Link className="avatarkit-link-button" href={`/dashboard/avatars/${id}/studio`}>
+                Edit
+              </Link>
+              <Link
+                className="avatarkit-link-button"
+                href={`/dashboard/avatars/${id}/studio?step=preview`}
+              >
+                Open text preview
+              </Link>
+              <Link className="avatarkit-link-button" href={`/dashboard/conversations?avatarId=${id}`}>
+                View conversations
+              </Link>
+              {canDelete ? (
+                <form action={deleteAvatarDraftAction}>
+                  <input type="hidden" name="avatarId" value={id} />
+                  <button className="avatarkit-button avatarkit-button-secondary" type="submit">
               Delete draft
             </button>
           </form>
@@ -165,11 +203,11 @@ export default async function DashboardAvatarsPage({
         <p className="eyebrow">AvatarKit AI</p>
         <h1>Avatar Studio</h1>
         <p className="hero-copy section-subtitle">
-          Build and save enterprise-grade avatar profiles before media generation and runtime features.
+          Build, preview, and publish controlled avatar profiles for future website embed eligibility.
         </p>
         <p className="avatar-page-intro">
-          Create a draft, complete available setup steps, and continue when you return. Advanced steps are
-          intentionally locked until later phases.
+          Create a draft, complete setup, test a dashboard preview, then publish when the server-side
+          readiness checks pass. Widget embed remains a later phase.
         </p>
         {error ? <p className="form-error">{getFirstErrorMessage(error)}</p> : null}
         <div className="studio-toolbar">
@@ -196,8 +234,10 @@ export default async function DashboardAvatarsPage({
           <div className="avatar-list-grid">
             {avatars.map(avatar => {
               const completion = buildSetupChecklist(avatar)
+              const publishReadiness = buildAvatarPublishReadiness(avatar, { workspaceIsActive: true })
               const currentPhoto = getCurrentSourcePhoto(avatar)
               const hasConsent = hasCurrentPhotoConsent(avatar)
+              const hasVoice = hasActiveSelectedVoice(avatar)
               return (
                 <AvatarCard
                   key={avatar.id}
@@ -208,11 +248,14 @@ export default async function DashboardAvatarsPage({
                   useCase={avatar.useCase}
                   language={avatar.language}
                   status={avatar.status}
+                  setupState={formatCardSetupState(avatar.status, publishReadiness.isReady)}
                   updatedAt={formatWorkspaceLocalTime(avatar.updatedAt)}
                   completion={completion}
                   canDelete={canEdit && avatar.status === "DRAFT"}
                   hasPhoto={Boolean(currentPhoto)}
                   hasConsent={hasConsent}
+                  hasVoice={hasVoice}
+                  voiceName={avatar.voice?.name}
                   photoUrl={currentPhoto?.displayUrl}
                 />
               )
@@ -227,7 +270,14 @@ export default async function DashboardAvatarsPage({
             <li key={step}>
               <p>{step[0].toUpperCase() + step.slice(1)}</p>
               <span>
-                {step === "basics" || step === "photo" || step === "consent" || step === "behavior"
+                {step === "basics" ||
+                step === "photo" ||
+                step === "consent" ||
+                step === "behavior" ||
+                step === "voice" ||
+                step === "knowledge" ||
+                step === "preview" ||
+                step === "publish"
                   ? "Available"
                   : "Future step"}
               </span>

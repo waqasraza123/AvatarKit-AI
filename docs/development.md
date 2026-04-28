@@ -184,6 +184,921 @@
 
 Use the paths above and verify each expected state with a browser.
 
+## Phase 9 - Text-to-Speech and Audio Response
+
+### Implemented this phase
+
+- Added a Python TTS provider boundary in `services/ai-runtime/app/runtime/tts.py`.
+- Extended runtime message output modes:
+  - `text`
+  - `audio`
+- `text` mode remains the default existing preview path.
+- `audio` mode returns the text answer plus either generated audio bytes or structured audio error metadata.
+- Added TTS providers:
+  - `MOCK`: local playable WAV tone, no external API key required.
+  - `OPENAI`: optional, used only when `AI_RUNTIME_TTS_PROVIDER=OPENAI` and `OPENAI_API_KEY` is configured.
+  - `ELEVENLABS`: optional, used only when `AI_RUNTIME_TTS_PROVIDER=ELEVENLABS` and `ELEVENLABS_API_KEY` is configured.
+  - `AZURE`: placeholder only; selecting it returns a provider error in this phase.
+- Added generated speech media type:
+  - `AvatarAssetType.GENERATED_SPEECH_AUDIO`
+- Stored generated audio under ignored local storage:
+  - `.data/uploads/avatar-assets/workspaces/[workspaceId]/avatars/[avatarId]/conversations/[conversationId]/messages/[messageId]/audio/[assetId].[extension]`
+- Served generated audio through the existing authenticated asset preview route:
+  - `/api/avatar-assets/[avatarAssetId]/preview`
+- Persisted audio responses on avatar messages:
+  - `Message.audioUrl`
+  - `Message.metadata.outputMode`
+  - `Message.metadata.audioStatus`
+  - `Message.metadata.audioError`
+  - `Message.metadata.ttsUsage`
+- Updated Avatar Studio Preview:
+  - output mode selector: Text only, Text + audio
+  - selected voice display
+  - missing voice warning
+  - loading state
+  - answer text
+  - browser audio player when audio exists
+  - audio failure fallback message
+- Updated conversation detail transcript:
+  - text remains visible
+  - audio player appears for messages with `audioUrl`
+  - audio metadata appears in transcript badges/details
+- Added trace foundations:
+  - `tts.started`
+  - `tts.completed`
+  - `tts.failed`
+  - `audio.stored`
+  - `audio.failed`
+
+### Phase 9 TTS provider architecture
+
+- Python owns TTS provider execution.
+- TypeScript dashboard code does not call provider APIs directly.
+- The runtime request carries selected voice metadata from the Phase 5 voice catalog.
+- Provider-specific details remain inside Python providers.
+- The UI only receives product-level state: text answer, audio URL, or audio failure.
+
+### Phase 9 audio storage behavior
+
+- Python returns generated audio bytes as base64 in the internal runtime response.
+- TypeScript stores those bytes through the existing avatar asset storage boundary.
+- Audio is associated with workspace, avatar, conversation, and avatar message.
+- Audio MIME type and byte size are stored on `AvatarAsset`.
+- Audio URLs are private dashboard URLs, not public widget/runtime URLs.
+- `.data/` remains ignored by git.
+
+### Phase 9 fallback behavior
+
+- If LLM/text generation succeeds but TTS fails:
+  - avatar text response is saved
+  - `Message.audioUrl` remains null
+  - `Message.metadata.audioStatus` is `failed`
+  - `Message.metadata.audioError` stores the audio failure
+  - runtime trace records `tts.failed`
+  - UI shows text answer plus audio failure state
+- If audio storage fails:
+  - avatar text response is saved
+  - `Message.audioUrl` remains null
+  - runtime trace records `audio.failed`
+  - UI shows text answer plus audio storage failure state
+- If selected voice is missing, inactive, or incompatible:
+  - audio preview is blocked before calling runtime
+  - UI directs the user to the Voice step
+
+### Phase 9 access rules
+
+- User must be authenticated.
+- User must belong to the active workspace.
+- Avatar must belong to the active workspace.
+- Suspended avatars cannot be previewed.
+- `OWNER`, `ADMIN`, and `OPERATOR` can request preview responses.
+- `VIEWER` remains read-only because preview creates messages.
+- Cross-workspace avatar preview remains blocked by workspace-scoped lookup.
+
+### Phase 9 intentionally does not include
+
+- speech-to-text
+- microphone recording
+- avatar video generation
+- D-ID/Tavus/Simli video response calls
+- embeddable widget
+- React SDK
+- public avatar runtime
+- lead capture workflow
+- billing UI
+- billing enforcement
+- realtime streaming
+- self-hosted avatar engine
+- publish functionality
+- voice cloning
+- custom voice upload
+
+### Manual verification paths for Phase 9
+
+1. Preview text mode still works  
+   Path: open Avatar Studio Preview, choose Text only, send question  
+   Expected: text answer works as before.
+
+2. Audio mode without selected voice  
+   Path: remove/no selected voice, choose Text + audio  
+   Expected: UI blocks or warns clearly and guides user to Voice step.
+
+3. Audio mode with selected voice  
+   Path: select voice, open Preview, choose Text + audio, send question  
+   Expected: answer text appears and audio player appears when generated.
+
+4. Audio player playback  
+   Path: click/play generated audio  
+   Expected: browser audio player can load the generated authenticated audio URL/reference.
+
+5. Conversation detail audio  
+   Path: open `/dashboard/conversations/[conversationId]` for an audio response conversation  
+   Expected: transcript shows text and audio player for avatar audio message.
+
+6. TTS provider fallback  
+   Path: use `AI_RUNTIME_TTS_PROVIDER=MOCK`  
+   Expected: audio flow works with mock WAV audio without external provider keys.
+
+7. TTS failure fallback  
+   Path: misconfigure `AI_RUNTIME_TTS_PROVIDER` manually, such as `OPENAI` without a valid key  
+   Expected: text answer still saves, audio error is shown, runtime trace records failure.
+
+8. Runtime traces  
+   Path: inspect conversation detail trace section  
+   Expected: `tts.started`, `tts.completed`, `tts.failed`, `audio.stored`, or `audio.failed` traces appear where applicable.
+
+9. Workspace isolation  
+   Path: attempt audio preview for avatar from another workspace  
+   Expected: access is blocked.
+
+10. Non-goal protection  
+    Path: inspect UI after Phase 9  
+    Expected: no STT/microphone, avatar video generation, widget, public runtime, publish, billing, or realtime streaming is functional.
+
+### Commands to run manually after Phase 9
+
+- `pnpm install`
+- Install/update Python runtime dependencies from `pyproject.toml` in your chosen environment
+- `cp .env.example .env`
+- Set `AI_RUNTIME_TTS_PROVIDER=MOCK`
+- `pnpm docker:up`
+- `pnpm db:generate`
+- `pnpm db:migrate`
+- `pnpm db:seed`
+- `pnpm dev:web`
+- `pnpm dev:api`
+- `pnpm dev:ai-runtime`
+
+Manual approval is pending until these checks are run by the project owner.
+
+## Phase 10 - Avatar Video Generation v1
+
+### Implemented this phase
+
+- Added a Python avatar media provider boundary in `services/ai-runtime/app/runtime/avatar_media.py`.
+- Extended runtime message output modes:
+  - `text`
+  - `audio`
+  - `video`
+- `text` mode remains the default existing preview path.
+- `audio` mode remains the Phase 9 path.
+- `video` mode generates text, attempts TTS audio, then calls the avatar media provider with the current source photo, selected voice metadata, answer text, and generated audio metadata when available.
+- Added avatar media providers:
+  - `MOCK`: no external API key required; returns a configured hosted mock video URL when `AI_RUNTIME_MOCK_AVATAR_VIDEO_URL` is set.
+  - `DID`: optional adapter gated by `AI_RUNTIME_AVATAR_MEDIA_PROVIDER=DID` and `DID_API_KEY`.
+  - `TAVUS`: placeholder gated by `AI_RUNTIME_AVATAR_MEDIA_PROVIDER=TAVUS`; returns a structured unavailable error until the replica/persona flow is configured.
+  - `SIMLI`: placeholder for future adapter work.
+  - `SELF_HOSTED`: explicitly unavailable for a future phase.
+- Added generated video media type:
+  - `AvatarAssetType.GENERATED_AVATAR_VIDEO`
+- Stored provider-returned video bytes under ignored local storage when a provider returns `videoBase64`:
+  - `.data/uploads/avatar-assets/workspaces/[workspaceId]/avatars/[avatarId]/conversations/[conversationId]/messages/[messageId]/video/[assetId].[extension]`
+- Served stored generated video through the existing authenticated asset preview route:
+  - `/api/avatar-assets/[avatarAssetId]/preview`
+- Linked successful video responses on avatar messages:
+  - `Message.videoUrl`
+  - `Message.metadata.outputMode`
+  - `Message.metadata.videoStatus`
+  - `Message.metadata.videoError`
+  - `Message.metadata.videoUsage`
+  - `Message.metadata.videoDurationSeconds`
+  - `Message.metadata.videoProviderJobId`
+- Updated Avatar Studio Preview:
+  - output mode selector: Text only, Text + audio, Text + avatar video
+  - visible video precondition checklist
+  - selected avatar photo preview
+  - selected voice display
+  - video generation loading copy
+  - answer text
+  - audio player when audio exists
+  - video player when video exists
+  - video fallback state when provider or storage fails
+  - explicit internal-dashboard-preview copy
+- Updated conversation detail transcript:
+  - text remains visible
+  - audio player appears for messages with `audioUrl`
+  - video player appears for messages with `videoUrl`
+  - video response metadata and badges appear when stored
+- Added trace foundations:
+  - `avatar_video.started`
+  - `avatar_video.completed`
+  - `avatar_video.failed`
+  - `video.stored`
+  - `video.failed`
+
+### Phase 10 avatar video provider architecture
+
+- Python owns avatar video provider execution.
+- TypeScript dashboard code does not call avatar media providers directly.
+- Runtime requests carry:
+  - current source photo reference
+  - answer text
+  - selected active voice metadata
+  - generated audio metadata when TTS succeeds
+- Provider-specific fields remain inside Python adapters.
+- The UI only receives product-level state: text answer, audio URL, video URL, or video failure guidance.
+- `AI_RUNTIME_AVATAR_MEDIA_PROVIDER` selects the provider.
+- Missing real-provider keys do not crash the app when `MOCK` is active.
+
+### Phase 10 video storage behavior
+
+- If the provider returns `videoBase64`, TypeScript stores the bytes through the existing private avatar asset boundary.
+- Stored video is associated with workspace, avatar, conversation, and message path.
+- Stored video URLs are private dashboard URLs, not public widget/runtime URLs.
+- If the provider returns a hosted `videoUrl`, Phase 10 links that URL directly on `Message.videoUrl` for internal dashboard preview.
+- Provider-hosted URL copying/downloading is deferred until controlled object storage or signed media transfer exists.
+- No unauthenticated public video route was added.
+- No public widget access was added.
+- The D-ID adapter is env-gated but may require a provider-accessible source photo URL in a deployed environment; local private dashboard asset URLs are not suitable for external provider fetches.
+
+### Phase 10 video preconditions
+
+Video preview is blocked before calling the runtime unless:
+
+- user is authenticated
+- user belongs to the active workspace
+- user has `OWNER`, `ADMIN`, or `OPERATOR` workspace role
+- avatar belongs to the active workspace
+- avatar is not `SUSPENDED`
+- avatar has a current valid `SOURCE_PHOTO`
+- avatar has current consent for that exact source photo
+- avatar has an active compatible selected voice
+- basics, behavior, and at least one READY knowledge source are complete
+- question text passes preview validation
+
+User-facing blocked states include:
+
+- Missing photo: `Upload an avatar photo before generating video.`
+- Missing consent: `Accept avatar identity consent before generating video.`
+- Missing voice: `Select a voice before requesting Text + avatar video preview.`
+
+### Phase 10 fallback behavior
+
+- If text generation fails, the existing safe runtime fallback response is saved.
+- If TTS fails during video mode, the text answer is kept and video generation may still fail or use text depending on provider support.
+- If video generation fails:
+  - avatar text response is saved
+  - generated audio remains linked when audio succeeded
+  - `Message.videoUrl` remains null
+  - `Message.metadata.videoStatus` is `failed`
+  - `Message.metadata.videoError` stores the video failure
+  - runtime traces record provider/storage failure
+  - UI shows text/audio fallback plus video error
+- If video storage fails:
+  - avatar text response is saved
+  - generated audio remains linked when audio succeeded
+  - `Message.videoUrl` remains null
+  - runtime trace records `video.failed`
+
+### Phase 10 intentionally does not include
+
+- speech-to-text
+- microphone recording
+- embeddable widget
+- React SDK
+- public avatar runtime
+- lead capture workflow
+- billing UI
+- billing enforcement
+- realtime streaming
+- self-hosted avatar engine
+- 3D avatar rendering
+- publish functionality
+- voice cloning
+- custom voice upload
+- public sharing
+
+### Phase 10 known limitations
+
+- `MOCK` returns a successful video only when `AI_RUNTIME_MOCK_AVATAR_VIDEO_URL` points to a playable video URL; otherwise it returns a structured video fallback error.
+- D-ID support is an optional adapter path and may require a deployed media URL strategy before it can fetch private avatar photos.
+- Tavus and Simli are placeholders in this phase.
+- Async provider jobs are normalized, but Phase 10 does not include a full polling UI or job dashboard.
+- Provider-hosted videos are linked for internal preview instead of copied to controlled storage when the provider returns only a hosted URL.
+
+### Manual verification paths for Phase 10
+
+1. Text mode still works  
+   Path: open Avatar Studio Preview, choose Text only, send question  
+   Expected: text answer works as before.
+
+2. Audio mode still works  
+   Path: choose Text + audio, send question with selected voice  
+   Expected: text and audio response still work.
+
+3. Video mode missing photo  
+   Path: remove avatar photo, choose Text + avatar video  
+   Expected: UI blocks video generation and explains photo requirement.
+
+4. Video mode missing consent  
+   Path: upload photo but do not accept consent, choose video mode  
+   Expected: UI blocks video generation and explains consent requirement.
+
+5. Video mode missing voice  
+   Path: remove selected voice, choose video mode  
+   Expected: UI blocks video generation and explains voice requirement.
+
+6. Video generation success  
+   Path: configure `AI_RUNTIME_AVATAR_MEDIA_PROVIDER=MOCK`, set `AI_RUNTIME_MOCK_AVATAR_VIDEO_URL` to a playable video URL, ensure avatar has photo, consent, voice, behavior, and knowledge, choose video mode, send question  
+   Expected: answer appears and video player appears when generated.
+
+7. Video fallback  
+   Path: misconfigure video provider manually, such as `AI_RUNTIME_AVATAR_MEDIA_PROVIDER=MOCK` with empty `AI_RUNTIME_MOCK_AVATAR_VIDEO_URL` or `AI_RUNTIME_AVATAR_MEDIA_PROVIDER=DID` without a valid key  
+   Expected: text/audio fallback remains, video error is shown, trace records failure.
+
+8. Conversation detail video  
+   Path: open `/dashboard/conversations/[conversationId]` for a video response conversation  
+   Expected: transcript shows text and video player for avatar message.
+
+9. Runtime traces  
+   Path: inspect conversation detail trace section  
+   Expected: `avatar_video.started`, `avatar_video.completed`, `avatar_video.failed`, `video.stored`, or `video.failed` traces appear where applicable.
+
+10. Workspace isolation  
+    Path: attempt video preview for avatar in another workspace  
+    Expected: access is blocked.
+
+11. Non-goal protection  
+    Path: inspect UI after Phase 10  
+    Expected: no public widget, publish flow, lead capture, STT/microphone, billing, public sharing, self-hosted engine, 3D rendering, or realtime streaming is functional.
+
+### Commands to run manually after Phase 10
+
+- `pnpm install`
+- Install/update Python runtime dependencies from `pyproject.toml` in your chosen environment
+- `cp .env.example .env`
+- Set `AI_RUNTIME_PROVIDER=MOCK`
+- Set `AI_RUNTIME_TTS_PROVIDER=MOCK`
+- Set `AI_RUNTIME_AVATAR_MEDIA_PROVIDER=MOCK`
+- Set `AI_RUNTIME_MOCK_AVATAR_VIDEO_URL` to a playable local/dev video URL for mock video success checks
+- `pnpm docker:up`
+- `pnpm db:generate`
+- `pnpm db:migrate`
+- `pnpm db:seed`
+- `pnpm dev:web`
+- `pnpm dev:api`
+- `pnpm dev:ai-runtime`
+
+Manual approval is pending until these checks are run by the project owner.
+
+## Phase 11 - Avatar Publish Flow
+
+### Implemented this phase
+
+- Added `Avatar.publishedAt` as the first-published timestamp.
+- Added central server-side publish readiness logic in `apps/web/src/lib/avatar.ts`.
+- Added publish/unpublish server actions in `apps/web/src/app/actions/avatars.ts`.
+- Replaced the Avatar Studio Publish placeholder with a functional readiness and publish panel.
+- Updated Avatar Studio header/sidebar to show:
+  - `Setup incomplete`
+  - `Ready to publish`
+  - `Published`
+  - `Suspended`
+- Updated `/dashboard/avatars` cards to show raw avatar status plus publish state:
+  - `Setup incomplete`
+  - `Ready to publish`
+  - `Published`
+  - `Suspended`
+  - `Failed`
+- Added an internal public-runtime eligibility helper only as domain logic. No public endpoint uses it in this phase.
+
+### Publish readiness logic
+
+Publish readiness is server-side authoritative and evaluates:
+
+- basics configured
+- valid current source photo uploaded
+- consent accepted for the current source photo
+- active voice selected
+- behavior configured
+- at least one `READY` workspace knowledge source exists
+- at least one successful dashboard preview response exists
+- avatar status is not `SUSPENDED`
+- workspace context is valid through authenticated active workspace membership
+
+Readiness returns:
+
+- `isReady`
+- completed requirements
+- missing requirements
+- blocking issues
+- warnings that widget/public access is not available until the widget phase
+
+The setup checklist still includes `Published`, but publish readiness follows the saved plan rule of requiring every setup item except `Published`.
+
+### Publish and unpublish behavior
+
+- Publish requires an authenticated user with active workspace membership.
+- Avatar lookup is constrained to the active workspace.
+- `OWNER`, `ADMIN`, and `OPERATOR` can publish/unpublish.
+- `VIEWER` can inspect readiness but cannot publish/unpublish.
+- Suspended avatars cannot be published.
+- Publish re-checks readiness server-side and blocks incomplete avatars.
+- Publish sets `Avatar.status = PUBLISHED`.
+- Publish sets `publishedAt` only when it was previously empty, preserving the first-published timestamp.
+- Re-publishing an already published ready avatar is safe and idempotent.
+- Unpublish changes status from `PUBLISHED` to:
+  - `READY` when setup remains publish-ready
+  - `DRAFT` when setup is no longer complete
+- Unpublish keeps `publishedAt` as historical first-published metadata.
+
+### Phase 11 intentionally does not include
+
+- embeddable widget
+- embed code
+- public runtime endpoint
+- public visitor conversations
+- lead capture workflow
+- billing UI or billing enforcement
+- STT or microphone input
+- realtime streaming
+- self-hosted avatar engine
+- public CDN script
+- public API keys
+- domain allowlist
+
+### Manual verification paths for Phase 11
+
+1. Publish step incomplete avatar  
+   Path: open Publish step on avatar missing required setup  
+   Expected: publish button disabled and missing requirements shown.
+
+2. Publish readiness complete  
+   Path: complete basics, photo, consent, voice, behavior, knowledge, and successful preview  
+   Expected: Publish step shows ready state.
+
+3. Publish avatar  
+   Path: click publish when ready  
+   Expected: avatar status becomes `PUBLISHED`, `publishedAt` is set if empty, and UI reflects published state.
+
+4. Unpublish avatar  
+   Path: click unpublish on published avatar  
+   Expected: avatar no longer shows `PUBLISHED`; status becomes `READY` if setup remains complete, otherwise `DRAFT`.
+
+5. Avatar list status  
+   Path: return to `/dashboard/avatars`  
+   Expected: card accurately shows setup incomplete, ready to publish, published, suspended, or failed state.
+
+6. Missing consent block  
+   Path: replace photo after consent and try publish  
+   Expected: publish is blocked because consent is no longer valid for the current photo.
+
+7. Missing preview block  
+   Path: complete setup but do not send a successful preview  
+   Expected: publish is blocked until preview is tested successfully.
+
+8. Viewer restrictions  
+   Path: access as `VIEWER` role if manually seeded  
+   Expected: viewer can see readiness but cannot publish or unpublish.
+
+9. Suspended avatar guard  
+   Path: manually force avatar to `SUSPENDED` and try publish  
+   Expected: publish is blocked.
+
+10. Non-goal protection  
+    Path: inspect UI after Phase 11  
+    Expected: no embed widget, embed code, public runtime, lead capture, billing, STT, realtime, or self-hosted avatar engine functionality exists.
+
+### Commands to run manually after Phase 11
+
+- `pnpm install`
+- `cp .env.example .env`
+- `pnpm docker:up`
+- `pnpm db:generate`
+- `pnpm db:migrate`
+- `pnpm db:seed`
+- `pnpm dev:web`
+- `pnpm dev:api`
+- `pnpm dev:ai-runtime`
+
+Manual approval is pending until these checks are run by the project owner.
+
+## Phase 12 - Embeddable Widget v1
+
+### Implemented this phase
+
+- Added widget data foundations:
+  - `WidgetSettings`
+  - `AllowedDomain`
+  - `WidgetTheme`
+  - `WidgetPosition`
+- Replaced `/dashboard/embed` with a real embed management page.
+- Added workspace-scoped server actions for:
+  - adding allowed domains
+  - removing allowed domains
+  - updating widget theme, position, greeting, and primary color
+- Added `/widget.js` as the local app-served widget script route.
+- Implemented `apps/widget` browser bootstrap script with:
+  - isolated Shadow DOM root
+  - floating launcher
+  - optional greeting bubble
+  - open chat panel
+  - text input and send button
+  - loading, transcript, media, and error states
+  - bottom-right and bottom-left floating positions
+- Added public widget endpoints:
+  - `GET /api/widget/[avatarId]/config`
+  - `POST /api/widget/[avatarId]/message`
+  - `GET /api/widget/media/[messageId]`
+- Widget messages use the existing runtime pipeline through TypeScript server routes and the Python runtime service.
+- Widget conversations are persisted as `ConversationChannel.WIDGET` and appear in `/dashboard/conversations`.
+
+### Widget settings behavior
+
+- Settings are one row per avatar through `WidgetSettings.avatarId`.
+- Only published avatars appear on `/dashboard/embed`.
+- Settings are editable only by `OWNER`, `ADMIN`, and `OPERATOR`.
+- `VIEWER` can inspect embed state but cannot change settings or domains.
+- Phase 12 settings are limited to:
+  - light theme
+  - bottom-right or bottom-left position
+  - greeting enabled or disabled
+  - greeting text
+  - optional primary hex color
+- Missing settings fall back to the avatar greeting, light theme, and bottom-right position.
+
+### Domain allowlist policy
+
+- Allowed domains are workspace-scoped.
+- Domains are normalized to hostnames only.
+- Protocols may be entered only when no path, query, or hash is present.
+- Stored domains never include protocol, path, query, or hash.
+- Duplicate domains are blocked per workspace.
+- Production widget config and message requests require at least one allowed domain and the request domain must match it.
+- Development requests from `localhost`, `127.0.0.1`, `::1`, or `*.localhost` are allowed when `NODE_ENV` is not `production`.
+
+### Embed script behavior
+
+The dashboard generates a local app-served script tag:
+
+```html
+<script
+  src="http://localhost:3000/widget.js"
+  data-avatar-id="AVATAR_ID"
+  data-theme="light"
+  data-position="bottom-right">
+</script>
+```
+
+- The app base URL is resolved from `NEXT_PUBLIC_APP_URL` when set, otherwise from request headers.
+- This phase does not claim CDN deployment.
+- `data-api-base-url` is optionally supported by the widget script for manual local testing against a different app origin.
+
+### Public config endpoint behavior
+
+`GET /api/widget/[avatarId]/config`:
+
+- requires a public request origin or referer
+- validates domain allowlist policy
+- rejects missing, draft, unpublished, suspended, or no-longer-publish-ready avatars
+- returns safe public avatar display data only:
+  - avatar id
+  - display name
+  - public role
+  - initials
+  - greeting settings
+  - theme and position settings
+  - primary color
+  - supported output modes
+  - default output mode
+- does not expose private source photo storage paths, workspace membership, provider metadata, or credentials
+
+### Public message endpoint behavior
+
+`POST /api/widget/[avatarId]/message`:
+
+- does not require signed-in user auth
+- requires published avatar eligibility and allowed domain validation
+- accepts text input only
+- validates message length
+- creates or reuses an active `WIDGET` conversation by visitor id/conversation id
+- saves the visitor message
+- calls the existing runtime pipeline
+- saves the avatar response
+- returns text plus public audio/video URLs when generated and available
+- does not call AI, TTS, or media providers from browser widget components
+
+Generated widget audio/video stored as local `AvatarAsset` rows is exposed only through `/api/widget/media/[messageId]` with a per-message public media token. Private source photo preview routes remain dashboard-authenticated.
+
+### Rate limiting foundation
+
+- Phase 12 adds an in-memory per avatar, visitor, domain, and IP message limit.
+- Current limit is 20 widget messages per minute per bucket.
+- This is a process-local foundation only. A durable Redis-backed abuse system is deferred to a later hardening phase.
+
+### Phase 12 intentionally does not include
+
+- lead capture workflow
+- microphone input
+- speech-to-text
+- realtime streaming
+- React SDK
+- billing UI or billing enforcement
+- self-hosted avatar engine
+- inline widget mode
+- kiosk mode
+- operator handoff workflow
+- public API keys
+- webhooks
+- analytics dashboard
+
+### Manual verification paths for Phase 12
+
+1. Embed page no published avatar  
+   Path: open `/dashboard/embed` before publishing any avatar  
+   Expected: clear empty/warning state appears.
+
+2. Embed page with published avatar  
+   Path: publish avatar, open `/dashboard/embed`  
+   Expected: avatar appears as embed-ready.
+
+3. Domain allowlist  
+   Path: add allowed domain  
+   Expected: domain is saved normalized and duplicate prevention works.
+
+4. Copy embed script  
+   Path: generate/copy embed script  
+   Expected: script includes avatar id and configured widget attributes.
+
+5. Widget loads on allowed domain/local test page  
+   Path: serve a local HTML page from `localhost`, add the generated script, and keep the web app running  
+   Expected: launcher appears.
+
+6. Widget blocks unpublished avatar  
+   Path: try widget with draft/unpublished avatar id  
+   Expected: widget config/message endpoint rejects safely.
+
+7. Widget text conversation  
+   Path: open widget, send text question  
+   Expected: visitor message saved, avatar response returned, transcript appears in widget.
+
+8. Widget conversation dashboard  
+   Path: open `/dashboard/conversations` after widget message  
+   Expected: `WIDGET` conversation appears.
+
+9. Domain blocked  
+   Path: try widget from disallowed domain if manually testable  
+   Expected: config/message access blocked.
+
+10. Non-goal protection  
+    Path: inspect widget after Phase 12  
+    Expected: no lead capture workflow, microphone, realtime streaming, billing, or React SDK functionality exists.
+
+### Commands to run manually after Phase 12
+
+- `pnpm install`
+- `cp .env.example .env`
+- `pnpm docker:up`
+- `pnpm db:generate`
+- `pnpm db:migrate`
+- `pnpm db:seed`
+- `pnpm dev:web`
+- `pnpm dev:api`
+- `pnpm dev:ai-runtime`
+
+Manual approval is pending until these checks are run by the project owner.
+
+## Phase 13 - Lead Capture
+
+### Implemented this phase
+
+- Added lead data foundations:
+  - `Lead`
+  - `LeadStatus`
+  - `LeadSource`
+- `Lead.conversationId` is unique, so Phase 13 stores one primary lead per conversation.
+- Added optional lead relations from workspace, avatar, and conversation records.
+- Updated the Python runtime response contract with a structured `leadCapture` object:
+  - `required`
+  - `reason`
+  - `fields`
+  - `promptText`
+- Preserved `leadCaptureDecision` for existing transcript metadata and dashboard badges.
+- Added simple rule-based lead capture decisions from `Avatar.leadCapturePreference`.
+- Added public widget-safe lead submission endpoint:
+  - `POST /api/widget/[avatarId]/lead`
+- Updated the widget to show the avatar answer first, then a lead capture card when requested.
+- Replaced `/dashboard/leads` placeholder with a real workspace-scoped lead dashboard.
+- Added `/dashboard/leads/[leadId]` detail page.
+- Added lead status update action for `OWNER`, `ADMIN`, and `OPERATOR`.
+- Updated conversation list/detail views with linked lead badges and panels.
+- Updated dashboard overview with real new and total lead counts.
+
+### Lead model details
+
+`Lead` stores:
+
+- `id`
+- `workspaceId`
+- `conversationId`
+- `avatarId`
+- `name`
+- `email`
+- `phone`
+- `message`
+- `source`
+- `status`
+- `metadata`
+- `createdAt`
+- `updatedAt`
+
+Lead statuses:
+
+- `NEW`
+- `CONTACTED`
+- `QUALIFIED`
+- `CLOSED`
+- `SPAM`
+
+Lead sources:
+
+- `WIDGET`
+- `DASHBOARD_PREVIEW`
+- `KIOSK`
+- `API`
+
+Phase 13 only creates widget leads through the public widget endpoint. Other source values are schema-ready for later channels but have no product flow yet.
+
+### Lead capture rules
+
+The existing avatar behavior field `leadCapturePreference` now drives runtime lead capture.
+
+- `never automatically ask`: never requests a lead form automatically.
+- `ask when visitor shows buying intent`: requests lead capture when visitor text contains simple buying-intent keywords such as pricing, quote, book, appointment, call, contact, schedule, interested, buy, hire, property viewing, or demo.
+- `ask when avatar cannot answer`: requests lead capture for fallback/error/low-confidence answers.
+- `ask after a few messages`: requests lead capture when the visitor has sent at least 3 messages in the conversation.
+
+The runtime does not add machine learning lead scoring.
+
+### Widget lead form behavior
+
+- Widget text conversation still renders the avatar answer first.
+- If `leadCapture.required` is true, the widget renders a lead capture card below the conversation.
+- Default requested fields are:
+  - name
+  - email
+  - phone
+  - message
+- The visitor may submit details or skip/dismiss the card.
+- Successful submit shows a saved state and conversation can continue.
+- Empty submissions are rejected.
+- Invalid email and basic phone validation errors are surfaced from the server.
+- The widget does not claim email delivery, CRM sync, staff notification, booking, or live handoff.
+
+### Lead endpoint and security behavior
+
+`POST /api/widget/[avatarId]/lead`:
+
+- is public but widget-safe.
+- requires a published, still-publish-ready avatar.
+- requires the same allowed-domain/origin checks as Phase 12 widget config/message routes.
+- requires a valid widget conversation for that avatar and workspace.
+- blocks cross-workspace conversation manipulation by checking workspace, avatar, and conversation together.
+- validates name, email, phone, message, and empty submissions server-side.
+- stores only safe metadata currently limited to request domain and truncated user agent.
+- uses `conversationId @unique` upsert behavior:
+  - first submission creates the primary lead.
+  - later submissions in the same conversation update that primary lead without creating duplicates.
+
+### Dashboard leads behavior
+
+`/dashboard/leads` shows:
+
+- name or anonymous label
+- email
+- phone
+- source
+- avatar
+- status
+- created time
+- message preview
+- source conversation link
+
+Filters:
+
+- status
+- avatar
+- source
+- recent window
+- text search across contact/message fields
+
+Empty state explains leads appear when visitors submit contact details through the widget or future channels.
+
+`/dashboard/leads/[leadId]` shows:
+
+- contact fields
+- source avatar/source
+- source conversation link
+- message
+- status
+- timestamps
+- transcript summary/link
+- status update actions for allowed roles
+
+### Role and access behavior
+
+- All dashboard lead reads are workspace-scoped.
+- `VIEWER` can view leads and linked conversations.
+- `OWNER`, `ADMIN`, and `OPERATOR` can update lead status.
+- Cross-workspace lead and conversation access is blocked through active workspace membership checks.
+
+### Phase 13 intentionally does not include
+
+- CRM integrations
+- email notifications
+- SMS notifications
+- calendar booking
+- advanced lead scoring
+- billing UI
+- billing enforcement
+- microphone input
+- speech-to-text
+- realtime streaming
+- self-hosted avatar engine
+- public API keys
+- webhooks
+- operator live chat
+
+### Manual verification paths for Phase 13
+
+1. Leads empty state  
+   Path: open `/dashboard/leads` before any leads exist  
+   Expected: polished empty state appears.
+
+2. Runtime requests lead capture  
+   Path: ask widget/avatar about pricing/booking/contact with lead capture preference enabled  
+   Expected: response includes lead capture prompt/card.
+
+3. Submit valid lead  
+   Path: submit name/email/phone/message in widget  
+   Expected: lead is saved and success state appears.
+
+4. Invalid lead validation  
+   Path: submit invalid email or empty fields  
+   Expected: validation error appears and no invalid lead is stored.
+
+5. Leads dashboard list  
+   Path: open `/dashboard/leads` after submission  
+   Expected: lead appears with avatar/source/status.
+
+6. Lead detail/status update  
+   Path: open `/dashboard/leads/[leadId]` or update status from list  
+   Expected: status updates for allowed roles.
+
+7. Conversation integration  
+   Path: open source conversation detail  
+   Expected: linked lead panel/badge appears.
+
+8. Duplicate submission behavior  
+   Path: submit lead twice in same conversation  
+   Expected: existing primary lead is updated, and no second lead is created for the same conversation.
+
+9. Viewer restrictions  
+   Path: access as `VIEWER` role if manually seeded  
+   Expected: viewer can read but cannot update lead status.
+
+10. Domain/security  
+    Path: attempt lead submit from disallowed domain if testable  
+    Expected: request is blocked.
+
+11. Non-goal protection  
+    Path: inspect UI after Phase 13  
+    Expected: no CRM sync, billing, realtime streaming, microphone/STT, advanced lead scoring, calendar booking, notifications, or advanced handoff exists.
+
+### Commands to run manually after Phase 13
+
+- `pnpm install`
+- `cp .env.example .env`
+- `pnpm docker:up`
+- `pnpm db:generate`
+- `pnpm db:migrate`
+- `pnpm db:seed`
+- `pnpm dev:web`
+- `pnpm dev:api`
+- `pnpm dev:ai-runtime`
+
+Manual approval is pending until these checks are run by the project owner.
+
 ## Phase 3 - Avatar Photo Upload and Validation
 
 ### Implemented this phase
@@ -454,6 +1369,606 @@ Use the paths above and confirm each expected behavior in a browser.
 - `pnpm dev:ai-runtime`
 
 Use the paths above and confirm each expected behavior in a browser.
+
+## Phase 5 - Voice Library and Avatar Behavior
+
+### Implemented this phase
+
+- Added voice selection persistence:
+  - `Voice`
+  - `VoiceProvider`
+  - `VoiceStatus`
+  - nullable `Avatar.voiceId` relation to the selected voice
+- Voice records support:
+  - `id`
+  - `provider`
+  - `providerVoiceId`
+  - `name`
+  - `language`
+  - `style`
+  - `presentationStyle`
+  - `previewUrl`
+  - `status`
+  - `createdAt`
+  - `updatedAt`
+- Required voice providers are represented:
+  - `MOCK`
+  - `OPENAI`
+  - `ELEVENLABS`
+  - `AZURE`
+  - `CUSTOM`
+- Required voice statuses are represented:
+  - `ACTIVE`
+  - `INACTIVE`
+- Added a small MOCK voice catalog for local/development use:
+  - Professional English Female
+  - Professional English Male
+  - Warm English Female
+  - Calm English Male
+  - Energetic English Neutral
+  - Urdu Friendly Placeholder
+  - Arabic Friendly Placeholder
+- Added `prisma/seed.mjs` and `pnpm db:seed` for manually seeding the voice catalog.
+- Added fallback static catalog rendering when no persisted active voices exist yet.
+- Replaced the Avatar Studio Voice placeholder with a functional Voice step.
+- Voice step supports:
+  - current selected voice summary
+  - active voice list
+  - language filter
+  - style and presentation labels
+  - provider label
+  - preview link only when `previewUrl` exists
+  - disabled no-preview state
+  - save selected voice
+  - clear selected voice
+  - loading, validation error, and success states
+- Updated setup checklist behavior:
+  - Basics can complete.
+  - Photo can complete.
+  - Consent can complete.
+  - Voice can complete when the selected voice is active.
+  - Behavior can complete.
+  - Knowledge, Preview, and Published remain incomplete.
+- Updated avatar list cards with voice state:
+  - selected voice name or `Voice selected`
+  - `Voice needed` when no active selected voice exists
+- Behavior configuration remains a saved configuration surface only.
+- Behavior fields currently include:
+  - greeting message
+  - tone
+  - answer style
+  - business instructions
+  - fallback message
+  - lead capture preference
+  - handoff preference
+
+### Phase 5 access behavior
+
+- User must be authenticated.
+- User must belong to the active workspace.
+- Avatar must belong to the active workspace.
+- `VIEWER` can view voice state but cannot change selected voice.
+- `OWNER`, `ADMIN`, and `OPERATOR` can update voice selection.
+- `SUSPENDED` avatars cannot change voice selection.
+- `PUBLISHED` avatars may store configuration changes only; this phase does not enable or change public runtime behavior.
+
+### Voice selection rules
+
+- Selected voice must exist as a persisted active voice or as a built-in MOCK catalog voice.
+- Built-in MOCK catalog voices are persisted on first assignment if the seed script has not been run yet.
+- Selected voice must be `ACTIVE`.
+- Selected voice language must be compatible with the avatar language.
+- Unsupported voice IDs are rejected.
+- Cross-workspace avatar ownership cannot be bypassed because voice updates resolve avatar by active workspace and avatar ID.
+
+### Behavior configuration status
+
+- Existing Behavior configuration is retained and refined for Phase 5 wording.
+- Lead capture and handoff are stored preferences only.
+- No lead capture workflow or handoff workflow exists in this phase.
+
+### Phase 5 non-goals intentionally left off
+
+- no real TTS generation
+- no real STT
+- no voice cloning
+- no user-uploaded voice samples
+- no provider API calls
+- no provider credential management
+- no knowledge base
+- no AI runtime calls
+- no LLM calls
+- no avatar video generation
+- no embeddable widget or React SDK
+- no public avatar runtime
+- no lead capture workflow
+- no billing or usage metering beyond setup checklist UI
+- no realtime streaming
+- no self-hosted avatar engine
+- no publish functionality
+
+### Manual verification paths for Phase 5
+
+1. Voice step availability
+   Path: open `/dashboard/avatars/[avatarId]/studio` and click Voice
+   Expected: Voice step is now functional and no longer locked.
+
+2. Voice list rendering
+   Path: open Voice step
+   Expected: active voice options render with names, language, style, presentation, and provider label.
+
+3. Select voice
+   Path: choose a voice and save
+   Expected: selected voice is stored and shown as current avatar voice.
+
+4. Voice checklist update
+   Path: select a voice
+   Expected: setup checklist marks Voice selected complete.
+
+5. Avatar list voice state
+   Path: return to `/dashboard/avatars`
+   Expected: avatar card shows voice selected/voice needed state correctly.
+
+6. Behavior still works
+   Path: edit Behavior step fields
+   Expected: behavior fields still save correctly after Phase 5 changes.
+
+7. Viewer restrictions
+   Path: access as `VIEWER` role if manually seeded
+   Expected: viewer can see voice state but cannot change selected voice.
+
+8. Suspended avatar guard
+   Path: manually force avatar to `SUSPENDED` and try voice update
+   Expected: voice update is blocked.
+
+9. Non-goal protection
+   Path: inspect UI after Phase 5
+   Expected: no real TTS, STT, avatar video generation, knowledge base, widget, publish, or runtime behavior exists.
+
+### Commands to run manually
+
+- `pnpm install`
+- `cp .env.example .env`
+- `pnpm docker:up`
+- `pnpm db:generate`
+- `pnpm db:migrate`
+- `pnpm db:seed`
+- `pnpm dev:web`
+- `pnpm dev:api`
+- `pnpm dev:ai-runtime`
+
+Use the paths above and confirm each expected behavior in a browser. Manual approval remains pending until these checks are run by the project owner.
+
+## Phase 6 - Knowledge Base v1
+
+### Implemented this phase
+
+- Added workspace-scoped knowledge persistence:
+  - `KnowledgeSource`
+  - `KnowledgeSourceType`
+  - `KnowledgeStatus`
+  - `KnowledgeChunk`
+- `KnowledgeSource` stores:
+  - `id`
+  - `workspaceId`
+  - `title`
+  - `type`
+  - `status`
+  - `rawText`
+  - `sourceUrl`
+  - `fileUrl`
+  - `metadata`
+  - `createdAt`
+  - `updatedAt`
+  - `archivedAt`
+- `KnowledgeChunk` stores:
+  - `id`
+  - `workspaceId`
+  - `sourceId`
+  - `content`
+  - `position`
+  - `metadata`
+  - `createdAt`
+- Required source types are represented:
+  - `FAQ`
+  - `TEXT`
+  - `WEBSITE`
+  - `PDF`
+- Required source statuses are represented:
+  - `PENDING`
+  - `READY`
+  - `FAILED`
+  - `ARCHIVED`
+- FAQ and TEXT sources are functional.
+- WEBSITE and PDF are visible only as future source-type placeholders.
+- Added deterministic chunking in `apps/web/src/lib/knowledge.ts`.
+- Added server actions in `apps/web/src/app/actions/knowledge.ts`:
+  - create FAQ source
+  - create TEXT source
+  - update source
+  - archive source
+- Replaced `/dashboard/knowledge` placeholder with a functional Knowledge Base page.
+- Added `/dashboard/knowledge/new` create flow.
+- Added `/dashboard/knowledge/[sourceId]` source detail/edit flow.
+- Replaced Avatar Studio Knowledge placeholder with a functional workspace knowledge summary.
+- Updated setup checklist behavior:
+  - Basics can complete.
+  - Photo can complete.
+  - Consent can complete.
+  - Voice can complete.
+  - Behavior can complete.
+  - Knowledge can complete when active workspace has at least one READY knowledge source.
+  - Preview and Published remain incomplete.
+
+### FAQ behavior
+
+- FAQ creation supports:
+  - title
+  - question
+  - answer
+  - optional category
+- FAQ source status is set to `READY` after deterministic chunks are created.
+- FAQ `rawText` is stored in this format:
+  - `Question: ...`
+  - `Answer: ...`
+- FAQ question, answer, and category are also stored in source metadata for editing.
+
+### Manual text behavior
+
+- Manual text creation supports:
+  - title
+  - content
+  - optional category
+- Manual text source status is set to `READY` after deterministic chunks are created.
+- Manual text `rawText` stores the submitted body.
+- Category is stored in source metadata for editing.
+
+### Chunking behavior
+
+- Chunking is deterministic and local.
+- Text is split by blank-line paragraph boundaries.
+- Long paragraphs are split at sentence or whitespace boundaries when possible.
+- Chunks are combined up to a fixed character limit.
+- Chunk `position` preserves source order.
+- Empty chunks are rejected and never stored.
+- Chunks are deleted and regenerated after source updates.
+- No embeddings, vector indexes, retrieval scores, or AI citations are created in Phase 6.
+
+### Phase 6 access behavior
+
+- User must be authenticated.
+- User must belong to the active workspace.
+- Knowledge source must belong to the active workspace.
+- `VIEWER` can view knowledge sources and chunks but cannot create, update, or archive.
+- `OWNER`, `ADMIN`, and `OPERATOR` can manage knowledge.
+- Cross-workspace source access is blocked by active workspace lookup.
+- Archived sources cannot be edited.
+- Archived sources do not count as READY usable knowledge.
+
+### Knowledge checklist behavior
+
+- Phase 6 uses all READY workspace knowledge for future avatar grounding.
+- Per-avatar source selection is not implemented.
+- Avatar setup checklist marks Knowledge added complete when the active workspace has at least one READY knowledge source.
+- Archiving the last READY source makes Knowledge added incomplete again.
+
+### Phase 6 non-goals intentionally left off
+
+- no Python AI runtime answer generation
+- no LLM calls
+- no embeddings or vector search
+- no PDF text extraction
+- no website crawling
+- no file upload for docs
+- no AI answer citations
+- no real avatar preview
+- no TTS/STT
+- no avatar video generation
+- no provider API calls
+- no embeddable widget or React SDK
+- no public avatar runtime
+- no lead capture workflow
+- no billing
+- no realtime streaming
+- no self-hosted avatar engine
+- no publish functionality
+
+### Manual verification paths for Phase 6
+
+1. Knowledge page empty state
+   Path: open `/dashboard/knowledge` in a workspace with no sources
+   Expected: polished empty state appears with actions to add FAQ/manual text.
+
+2. Create FAQ
+   Path: create a valid FAQ source
+   Expected: source is created, status READY, chunks are created.
+
+3. FAQ validation
+   Path: submit FAQ with missing question or answer
+   Expected: validation error appears and no source is created.
+
+4. Create manual text source
+   Path: add a valid manual text source
+   Expected: source is created, deterministic chunks are created.
+
+5. Manual text validation
+   Path: submit empty or too-long invalid content
+   Expected: validation error appears and no invalid source is created.
+
+6. Edit source
+   Path: edit an existing source
+   Expected: source updates and chunks regenerate consistently.
+
+7. Archive/delete source
+   Path: archive a source
+   Expected: source no longer counts as ready usable knowledge.
+
+8. Avatar Studio Knowledge step
+   Path: open `/dashboard/avatars/[avatarId]/studio` and click Knowledge
+   Expected: Knowledge step is functional and shows workspace knowledge summary.
+
+9. Setup checklist update
+   Path: create at least one READY knowledge source
+   Expected: avatar setup checklist marks Knowledge added complete based on current Phase 6 rule.
+
+10. Workspace isolation
+    Path: attempt to view/edit source from another workspace
+    Expected: access is blocked or safely redirected.
+
+11. Viewer restrictions
+    Path: access as `VIEWER` role if manually seeded
+    Expected: viewer can view knowledge but cannot create/update/delete/archive.
+
+12. Non-goal protection
+    Path: inspect UI after Phase 6
+    Expected: no LLM, vector search, embeddings, PDF ingestion, website crawling, TTS, video generation, widget, or publish functionality exists.
+
+### Commands to run manually
+
+- `pnpm install`
+- `cp .env.example .env`
+- `pnpm docker:up`
+- `pnpm db:generate`
+- `pnpm db:migrate`
+- `pnpm db:seed`
+- `pnpm dev:web`
+- `pnpm dev:api`
+- `pnpm dev:ai-runtime`
+
+Use the paths above and confirm each expected behavior in a browser. Manual approval remains pending until these checks are run by the project owner.
+
+## Phase 7 - Python AI Runtime Text Conversation (text-only)
+
+### Implemented this phase
+
+- Added Python runtime endpoint `POST /runtime/message` with request/response schemas.
+- Added service-token request guard:
+  - `x-service-token` must match runtime token in `AI_RUNTIME_SERVICE_TOKEN`.
+- Added runtime provider abstraction:
+  - `MOCK`, `OPENAI`, `ANTHROPIC`.
+  - Missing provider configuration routes to mock fallback instead of hard-failing.
+- Runtime configuration expected in environment:
+  - `AI_RUNTIME_SERVICE_TOKEN` (required)
+  - `AI_RUNTIME_PROVIDER` (`MOCK` | `OPENAI` | `ANTHROPIC`)
+  - `AI_RUNTIME_REQUEST_TIMEOUT_MS` (optional)
+  - `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` (optional, provider-specific)
+  - `AI_RUNTIME_OPENAI_MODEL`, `AI_RUNTIME_ANTHROPIC_MODEL` (optional)
+- Added safety and fallback behavior:
+  - blocked responses for sensitive/unsupported definitive advice requests.
+  - fallback path when no ready knowledge chunks are available.
+- Added deterministic knowledge retrieval path in TypeScript for dashboard preview:
+  - keyword scoring in `apps/web/src/lib/avatar-runtime-retrieval.ts`.
+  - optional return-all mode for small workspace chunk sets.
+- Added typed runtime client in `apps/web/src/lib/avatar-runtime-client.ts`.
+  - single call boundary in TypeScript.
+- Added preview action flow in `apps/web/src/app/actions/avatars.ts`:
+  - creates/reuses `DASHBOARD_PREVIEW` conversation
+  - saves visitor + avatar messages
+  - saves runtime traces for required runtime events
+  - uses `ConversationStatus.ACTIVE` for stored preview sessions
+- Replaced studio Preview placeholder with text runtime UI in `apps/web/src/app/dashboard/avatars/[avatarId]/studio/page.tsx` and new `avatar-preview-panel.tsx`:
+  - setup warning and readiness state
+  - text input + send
+  - transcript and loading/error states
+  - explicit text-only messaging.
+- Avatar list opens Preview session directly from the card action.
+
+### Phase 7 model behavior
+
+- Endpoints use existing runtime models:
+  - `Conversation`
+  - `Message`
+  - `RuntimeTrace`
+- Runtime channel used:
+  - `ConversationChannel.DASHBOARD_PREVIEW`
+- Runtime events recorded:
+  - `message.received`
+  - `retrieval.started`
+  - `retrieval.completed`
+  - `llm.started`
+  - `llm.completed`
+  - `safety.checked`
+  - `response.saved`
+  - `response.returned`
+  - `runtime.failed`
+
+### Manual verification paths for Phase 7
+
+1. Preview step availability
+   Path: open `/dashboard/avatars/[avatarId]/studio` and click Preview
+   Expected: Preview step is functional as text-only runtime.
+
+2. Preview blocked or warned without knowledge
+   Path: open Preview before adding ready knowledge
+   Expected: clear warning/fallback behavior and no false confidence claims.
+
+3. Send text question
+   Path: type a question and send
+   Expected: visitor message saved and avatar text answer returned.
+
+4. Knowledge-grounded answer
+   Path: ask a question covered by FAQ/manual text
+   Expected: answer stays aligned to workspace knowledge and avoids unsupported details.
+
+5. Unknown question fallback
+   Path: ask an unsupported question
+   Expected: runtime returns fallback or handoff-style answer.
+
+6. Safety fallback
+   Path: ask for medical/legal/financial definitive advice
+   Expected: blocked response without definitive claims.
+
+7. Conversation persistence
+   Path: send multiple messages then refresh
+   Expected: active preview transcript persists for that session.
+
+8. Setup checklist update
+   Path: complete one successful preview response
+   Expected: Preview tested checklist item becomes complete.
+
+9. Runtime unavailable
+   Path: stop/misconfigure Python runtime
+   Expected: UI shows safe error and fallback answer.
+
+10. Workspace isolation
+    Path: attempt preview from another workspace
+    Expected: access blocked at action boundary.
+
+11. Non-goal protection
+    Path: inspect UI after Phase 7
+    Expected: no audio/video generation, widget, public runtime, publish, or lead/billing workflows are active.
+
+### What Phase 7 intentionally does not include
+
+- No text-to-speech generation (TTS).
+- No speech-to-text input (STT).
+- No avatar video rendering or media generation.
+- No embeddable widget runtime.
+- No publish functionality.
+- No lead capture workflow.
+- No realtime streaming conversation mode.
+- No billing/usage metering in runtime paths.
+- No self-hosted avatar engine integration.
+
+## Phase 8 - Conversation Dashboard
+
+### Implemented this phase
+
+- Added `/dashboard/conversations` as a real list dashboard for persisted preview conversations.
+- Added `/dashboard/conversations/[conversationId]` as conversation detail for transcript, metadata, and runtime trace review.
+- Conversation list now displays:
+  - session label
+  - avatar name
+  - channel
+  - status
+  - latest message preview
+  - message count
+  - created time
+  - last updated time
+  - handoff requested / failed flags when applicable
+- Added filters and search:
+  - avatar filter
+  - channel filter (`DASHBOARD_PREVIEW` active, `WIDGET/KIOSK/API` placeholder-only)
+  - status filter
+  - message search text
+  - recent window (`all`, `7d`, `30d`, `90d`)
+- Added empty state for no preview conversations with links to Avatar Studio.
+- Added safe status management actions on list and detail:
+  - mark active again
+  - mark ended
+  - mark failed
+- Added role-gated actions:
+  - `OWNER`, `ADMIN`, `OPERATOR` can update status
+  - `VIEWER` can read only
+- Added detail page sections:
+  - full transcript with role labels (visitor/avatar/system/operator when present)
+  - message timestamps and metadata badges
+  - runtime trace summary (event, status, duration, created time, errors)
+- Added dashboard overview cards for:
+  - total conversations
+  - dashboard preview conversations
+  - failed conversations
+  - recent conversations
+- Added cross-screen links:
+  - Avatar Studio Preview links to latest preview conversation (or filtered list fallback)
+  - Avatar list cards link to filtered conversations by avatar
+
+### Phase 8 intentionally does not include
+
+- public/conversational widget channels
+- API/kiosk operator channels
+- lead capture workflow
+- operator human reply workflow
+- audio/video response playback
+- publish flow
+- realtime streaming
+- billing or usage metering
+- public avatar runtime
+
+### Access rules and behavior
+
+- user must be authenticated
+- user must belong to active workspace
+- conversation must belong to active workspace
+- cross-workspace conversations are blocked at query boundaries and in status updates
+- `VIEWER` role has read-only access to conversation screens
+- safe `statusError` redirects are returned on invalid status transition or unauthorized mutation
+
+### Manual verification paths for Phase 8
+
+1. Conversations empty state  
+   Path: open `/dashboard/conversations` before preview messages exist  
+   Expected: polished empty state appears with context and links.
+
+2. Generate preview conversation  
+   Path: use Avatar Studio Preview to send a message, then open `/dashboard/conversations`  
+   Expected: conversation appears in list.
+
+3. Conversation list content  
+   Path: inspect conversation list  
+   Expected: avatar name, channel, status, message preview, and timestamps render correctly.
+
+4. Conversation filters  
+   Path: use avatar/channel/status/search/recent filters  
+   Expected: list updates correctly within active workspace.
+
+5. Conversation detail  
+   Path: open a conversation detail page  
+   Expected: transcript renders with role separation and timestamps.
+
+6. Runtime trace section  
+   Path: open detail for a traced conversation  
+   Expected: runtime trace summary appears with event, status, and duration.
+
+7. Status action  
+   Path: mark conversation ended/active/failed as permitted  
+   Expected: status updates and viewer role cannot mutate.
+
+8. Workspace isolation  
+   Path: open conversation belonging to another workspace  
+   Expected: access blocked or safe redirect.
+
+9. Viewer restrictions  
+   Path: open conversation routes as `VIEWER`  
+   Expected: read-only UI and no status mutation controls.
+
+10. Non-goal protection  
+    Path: inspect dashboard after Phase 8  
+    Expected: no lead capture, widget, audio/video response, publish, realtime, or billing behaviors.
+
+### Commands to run manually
+
+- `cp .env.example .env`
+- `pnpm install`
+- `pnpm docker:up`
+- `pnpm db:generate`
+- `pnpm db:migrate`
+- `pnpm db:seed`
+- `pnpm dev:web`
+- `pnpm dev:api`
+- `pnpm dev:ai-runtime`
+
+Use these paths and commands as manual checks; full approval remains pending until they are run.
 
 ## Phase Discipline
 

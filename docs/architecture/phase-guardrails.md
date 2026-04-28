@@ -4,8 +4,8 @@
 - Python owns AI, media, retrieval, ingestion, and future GPU orchestration.
 - React components must not call avatar providers directly.
 - Product routes must not hardcode provider-specific logic.
-- Public widget access must not exist before the publish flow exists.
-- Future avatar publish must require valid consent.
+- Public widget access must not exist before the widget phase.
+- Avatar publish must require valid consent for the current valid source photo.
 - Cross-workspace data access is never allowed.
 - Python services should trust only signed internal service requests from the TypeScript API.
 - Do not implement future phases early.
@@ -31,6 +31,101 @@
   - suspended avatars cannot accept consent
   - consent acceptance must not publish avatars or enable public runtime behavior
 - Phase 4 must not add voice consent, voice cloning, public identity verification, celebrity detection, face recognition, moderation provider integration, publish flow, public runtime, widget behavior, or provider media generation.
+- Phase 5 adds only workspace-scoped avatar voice selection and behavior configuration refinement:
+  - voices are stored in a global `Voice` catalog with provider metadata but no provider credentials
+  - `Avatar.voiceId` may reference an active selected voice
+  - built-in MOCK voice metadata may be used for local/development catalog fallback
+  - `VIEWER` roles may view voice state but cannot update selection
+  - `OWNER`, `ADMIN`, and `OPERATOR` may update or clear voice selection
+  - suspended avatars cannot update voice selection
+  - voice language must be compatible with avatar language
+  - voice selection must not generate audio, call TTS providers, publish avatars, or enable runtime behavior
+- Phase 5 must not add real TTS/STT, voice cloning, uploaded voice samples, provider API calls, provider credential management, knowledge base, AI runtime, LLM calls, avatar video generation, widget behavior, lead capture workflow, billing, realtime streaming, self-hosted avatar engine, or publish functionality.
+- Phase 6 adds only workspace-scoped Knowledge Base v1:
+  - `KnowledgeSource` stores FAQ, TEXT, WEBSITE, and PDF source metadata
+  - FAQ and TEXT are the only functional source types
+  - WEBSITE and PDF may appear only as future placeholders
+  - `KnowledgeChunk` stores deterministic chunks without embeddings
+  - chunks are created from approved source text and regenerated on source updates
+  - `VIEWER` roles may view knowledge but cannot create, update, or archive sources
+  - `OWNER`, `ADMIN`, and `OPERATOR` may manage knowledge sources
+  - cross-workspace source access is blocked by active workspace lookup
+  - Avatar Studio Knowledge uses all READY workspace knowledge as the Phase 6 rule
+  - knowledge selection must not run retrieval, embeddings, LLM calls, answer generation, citations, preview, publish, or runtime behavior
+- Phase 6 must not add Python AI runtime answer generation, LLM calls, embeddings/vector search, PDF extraction, website crawling, file upload, AI citations, real avatar preview, TTS/STT, video generation, provider API calls, widget behavior, React SDK, public runtime, lead capture workflow, billing, realtime streaming, self-hosted avatar engine, or publish functionality.
+- Phase 7 adds the first Phase 7 Python AI Runtime text conversation path:
+  - dashboard `/dashboard/avatars/[avatarId]/studio?step=preview` opens a text-only runtime panel
+  - TypeScript validates workspace role and avatar access before calling runtime
+  - conversations and messages are persisted under `ConversationChannel.DASHBOARD_PREVIEW`
+  - runtime tokens are required for TypeScript-to-Python calls
+  - runtime provider abstraction supports `MOCK`, `OPENAI`, and `ANTHROPIC`, with local mock fallback
+  - safety/fallback guards block unsupported medical/legal/financial definitive advice in this phase
+  - runtime traces are recorded for `message.received`, `retrieval.*`, `llm.*`, `safety.checked`, `response.saved`, `response.returned`, and `runtime.failed`
+- Phase 7 must not add TTS/STT, avatar video generation, widget runtime, public runtime, lead workflow, publish flow, realtime streaming, or billing in this phase.
+- Phase 8 adds a conversation review surface for workspace-owned dashboard preview sessions:
+  - conversation list and detail routes under `apps/web/src/app/dashboard/conversations`
+  - role-aware status management actions (`ACTIVE`, `ENDED`, `FAILED`)
+  - transcript rendering for persisted `Message` rows with role/time display
+  - runtime trace visibility from `RuntimeTrace`
+  - dashboard overview summary cards driven by real persisted conversation metrics
+- Conversation dashboard in Phase 8 remains read-only for `VIEWER`; mutation actions are restricted to `OWNER`, `ADMIN`, and `OPERATOR`.
+- Phase 8 must not add widget channels, lead capture, operator reply UX, public runtime, audio/video response playback, publish, billing, or realtime streaming.
+- Phase 9 adds dashboard-only text-to-speech for Avatar Studio Preview:
+  - Python owns the TTS provider abstraction under `services/ai-runtime`.
+  - TTS providers are selected by `AI_RUNTIME_TTS_PROVIDER` and are env-gated.
+  - `MOCK` TTS must work without external credentials and returns playable local audio bytes.
+  - TypeScript persists returned audio bytes through the existing authenticated avatar asset boundary.
+  - Generated speech is stored as `AvatarAssetType.GENERATED_SPEECH_AUDIO` and linked to the avatar response through `Message.audioUrl`.
+  - Audio files remain private dashboard media served through authenticated `/api/avatar-assets/[avatarAssetId]/preview`.
+  - Text mode remains the default preview behavior.
+  - Audio mode requires an active selected compatible voice.
+  - `VIEWER` remains read-only because preview sends messages.
+  - Runtime traces include TTS and audio storage events.
+- Phase 9 must not add speech-to-text, microphone recording, avatar video generation, public widget runtime, React SDK, lead capture workflow, billing UI/enforcement, realtime streaming, publish flow, voice cloning, custom voice upload, or self-hosted avatar engine behavior.
+- Phase 10 adds dashboard-only avatar video generation for Avatar Studio Preview:
+  - Python owns the avatar media provider abstraction under `services/ai-runtime`.
+  - Avatar media providers are selected by `AI_RUNTIME_AVATAR_MEDIA_PROVIDER` and are env-gated.
+  - Provider-specific API details must stay inside Python provider adapters.
+  - React components and product routes must never call D-ID, Tavus, Simli, or self-hosted avatar engines directly.
+  - Video mode requires a current valid source photo, current consent for that exact photo, an active compatible selected voice, a non-suspended avatar, preview write permission, and successful text generation.
+  - `MOCK` provider requires no external API key and returns a configured mock hosted video URL when `AI_RUNTIME_MOCK_AVATAR_VIDEO_URL` is set; otherwise it returns a structured fallback error.
+  - Generated video bytes, when returned by a provider, are stored as private `AvatarAssetType.GENERATED_AVATAR_VIDEO` assets and linked through `Message.videoUrl`.
+  - Provider-hosted video URLs may be linked directly for internal dashboard preview when copying to controlled storage is not yet available.
+  - Video fallback must keep text and audio results whenever they were generated.
+  - Runtime traces include avatar video provider and video storage success/failure events.
+- Phase 10 must not add speech-to-text, microphone recording, public widget runtime, React SDK, lead capture workflow, billing UI/enforcement, realtime streaming, publish flow, voice cloning, custom voice upload, 3D avatar rendering, public sharing, or self-hosted avatar engine behavior.
+- Phase 11 adds controlled dashboard publish/unpublish only:
+  - publish readiness is server-side authoritative in TypeScript domain logic
+  - readiness requires basics, valid source photo, current-photo consent, active voice, behavior, READY knowledge, successful dashboard preview, non-suspended avatar status, and valid active workspace context
+  - `OWNER`, `ADMIN`, and `OPERATOR` may publish/unpublish; `VIEWER` is read-only
+  - publish sets `Avatar.status = PUBLISHED` and preserves `publishedAt` as first-published timestamp
+  - unpublish changes status to `READY` when setup remains complete, otherwise `DRAFT`
+  - published status only marks future widget/public-runtime eligibility
+- Phase 11 must not add embeddable widget, embed code, public runtime endpoint, public visitor conversations, lead capture workflow, billing UI/enforcement, STT/microphone input, realtime streaming, public CDN script, public API keys, domain allowlist, or self-hosted avatar engine behavior.
+- Phase 12 adds embeddable widget v1:
+  - public widget access is allowed only for `PUBLISHED` avatars that remain publish-ready and are not suspended
+  - `/dashboard/embed` manages published avatar widget settings and workspace allowed domains
+  - `AllowedDomain` stores normalized hostnames only and prevents duplicates per workspace
+  - production widget requests require at least one allowed domain and must match the request origin domain
+  - development may allow localhost origins when `NODE_ENV` is not `production`
+  - public widget config exposes only safe display fields, greeting/theme settings, initials, and supported output modes
+  - public widget messages accept text only and must pass through the TypeScript route boundary before calling the existing Python runtime service
+  - widget conversations persist as `ConversationChannel.WIDGET` and are visible in the conversation dashboard
+  - generated widget media stored as `AvatarAsset` must use public per-message media tokens and must not expose private source photo paths
+  - browser widget code must not call AI, TTS, avatar media, storage, or provider APIs directly
+- Phase 12 must not add lead capture workflow, microphone/STT input, realtime streaming, React SDK, billing UI/enforcement, self-hosted avatar engine, inline widget mode, kiosk mode, operator handoff workflow, public API keys, webhooks, or analytics behavior.
+- Phase 13 adds lead capture only:
+  - `Lead` is workspace-scoped and linked to one primary `Conversation` through unique `conversationId`.
+  - `Lead.avatarId` is optional so leads can survive future avatar lifecycle changes.
+  - supported lead statuses are `NEW`, `CONTACTED`, `QUALIFIED`, `CLOSED`, and `SPAM`.
+  - supported lead sources are `WIDGET`, `DASHBOARD_PREVIEW`, `KIOSK`, and `API`, but Phase 13 only creates widget leads.
+  - public lead submission must reuse published-avatar eligibility and widget domain allowlist checks.
+  - public lead submission must validate all fields server-side and block cross-workspace conversation manipulation.
+  - duplicate widget submissions for the same conversation must update the existing primary lead instead of creating uncontrolled duplicates.
+  - Python runtime may request lead capture through structured `leadCapture` output based on simple behavior rules.
+  - widget UI may collect name, email, phone, and message after showing the avatar answer.
+  - dashboard lead reads are available to workspace members, while status updates are restricted to `OWNER`, `ADMIN`, and `OPERATOR`.
+- Phase 13 must not add CRM integrations, email/SMS notifications, calendar booking, advanced lead scoring, billing UI/enforcement, microphone/STT input, realtime streaming, self-hosted avatar engine behavior, public API keys, webhooks, or operator live chat.
 
 ## Phase 1 decisions (implemented)
 

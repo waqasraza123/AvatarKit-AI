@@ -1,4 +1,7 @@
 import { z } from "zod"
+import { widgetBrowserScript } from "./browser-script"
+
+export { widgetBrowserScript }
 
 export const widgetBootstrapConfigSchema = z.object({
   avatarId: z.string().min(1),

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@prisma/client": "^6.18.0",
+    "@avatarkit/widget": "workspace:*",
     "@avatarkit/types": "workspace:*",
     "@avatarkit/ui": "workspace:*",
     "next": "^16.0.0",

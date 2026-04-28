@@ -3,9 +3,14 @@ import {
   AvatarAssetValidationStatus,
   AvatarEngine,
   AvatarStatus,
+  ConversationChannel,
+  ConversationStatus,
+  MessageRole,
   WorkspaceRole
 } from "@prisma/client"
 import { getAvatarConsentState, type AvatarConsentRecord } from "@/lib/avatar-consent"
+import type { AvatarVoiceRecord } from "@/lib/avatar-voice-shared"
+import { fetchKnowledgeSummaryForWorkspace } from "@/lib/knowledge"
 import { prisma } from "@/lib/prisma"
 import { hasWorkspaceRole } from "@/lib/workspace"
 
@@ -93,6 +98,7 @@ export type AvatarFieldErrors = Partial<
 export type AvatarRecord = {
   id: string
   workspaceId: string
+  voiceId: string | null
   name: string
   displayName: string
   role: string
@@ -107,10 +113,32 @@ export type AvatarRecord = {
   handoffPreference: string
   status: AvatarStatus
   engine: AvatarEngine
+  publishedAt: Date | null
+  voice: AvatarVoiceRecord | null
   photoAssets: AvatarPhotoAssetRecord[]
   consentRecords: AvatarConsentRecord[]
+  readyKnowledgeSourceCount: number
+  previewResponseCount: number
   createdAt: Date
   updatedAt: Date
+}
+
+export type AvatarPreviewMessage = {
+  id: string
+  role: MessageRole
+  content: string
+  audioUrl: string | null
+  videoUrl: string | null
+  createdAt: string
+  metadata?: Record<string, unknown> | null
+}
+
+export type AvatarPreviewConversation = {
+  conversationId: string
+  status: ConversationStatus
+  updatedAt: string
+  endedAt: string | null
+  messages: AvatarPreviewMessage[]
 }
 
 export type AvatarSetupChecklistItem = {
@@ -125,6 +153,32 @@ export type AvatarSetupCompletion = {
   totalCount: number
   percentComplete: number
   summary: string
+}
+
+export type AvatarPublishRequirementKey =
+  | "basics"
+  | "photo"
+  | "consent"
+  | "voice"
+  | "behavior"
+  | "knowledge"
+  | "preview"
+  | "avatarStatus"
+  | "workspace"
+
+export type AvatarPublishRequirement = {
+  key: AvatarPublishRequirementKey
+  label: string
+  complete: boolean
+  detail: string
+}
+
+export type AvatarPublishReadiness = {
+  isReady: boolean
+  completedRequirements: AvatarPublishRequirement[]
+  missingRequirements: AvatarPublishRequirement[]
+  blockingIssues: string[]
+  warnings: string[]
 }
 
 export function hasText(value: string): boolean {
@@ -225,9 +279,89 @@ function parseAvatarConsentRecords(raw: unknown): AvatarConsentRecord[] {
   }).filter((item): item is AvatarConsentRecord => Boolean(item))
 }
 
+function parseAvatarVoiceRecord(raw: unknown): AvatarVoiceRecord | null {
+  if (!raw || typeof raw !== "object") {
+    return null
+  }
+
+  const candidate = raw as AvatarVoiceRecord
+
+  return {
+    id: String(candidate.id ?? ""),
+    provider: candidate.provider,
+    providerVoiceId: String(candidate.providerVoiceId ?? ""),
+    name: String(candidate.name ?? ""),
+    language: String(candidate.language ?? ""),
+    style: String(candidate.style ?? ""),
+    presentationStyle: String(candidate.presentationStyle ?? ""),
+    previewUrl: candidate.previewUrl ? String(candidate.previewUrl) : null,
+    status: candidate.status,
+    createdAt: candidate.createdAt,
+    updatedAt: candidate.updatedAt
+  }
+}
+
+function isRuntimeErrorStatus(metadata: unknown): boolean {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return false
+  }
+
+  const candidate = metadata as { runtimeStatus?: unknown }
+  return candidate.runtimeStatus === "error"
+}
+
+function parseMessageMetadata(raw: unknown): Record<string, unknown> | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return null
+  }
+
+  return raw as Record<string, unknown>
+}
+
+async function fetchDashboardPreviewResponseCountsForAvatars(
+  workspaceId: string,
+  avatarIds: string[]
+): Promise<Record<string, number>> {
+  if (avatarIds.length === 0) {
+    return {}
+  }
+
+  const previewResponses = await prisma.message.findMany({
+    where: {
+      role: MessageRole.AVATAR,
+      conversation: {
+        workspaceId,
+        channel: ConversationChannel.DASHBOARD_PREVIEW,
+        avatarId: { in: avatarIds }
+      }
+    },
+    select: {
+      metadata: true,
+      conversation: {
+        select: {
+          avatarId: true
+        }
+      }
+    }
+  })
+
+  const counts: Record<string, number> = {}
+  for (const response of previewResponses) {
+    if (isRuntimeErrorStatus(response.metadata)) {
+      continue
+    }
+
+    const avatarId = response.conversation.avatarId
+    counts[avatarId] = (counts[avatarId] ?? 0) + 1
+  }
+
+  return counts
+}
+
 function mapAvatarRecord(raw: {
   id: string
   workspaceId: string
+  voiceId: string | null
   name: string
   displayName: string
   role: string
@@ -242,14 +376,17 @@ function mapAvatarRecord(raw: {
   handoffPreference: string
   status: AvatarStatus
   engine: AvatarEngine
+  publishedAt: Date | null
   createdAt: Date
   updatedAt: Date
+  voice: unknown
   photoAssets: unknown
   consentRecords: unknown
-}): AvatarRecord {
+}, readyKnowledgeSourceCount: number, previewResponseCount: number): AvatarRecord {
   return {
     id: raw.id,
     workspaceId: raw.workspaceId,
+    voiceId: raw.voiceId,
     name: raw.name,
     displayName: raw.displayName,
     role: raw.role,
@@ -264,8 +401,12 @@ function mapAvatarRecord(raw: {
     handoffPreference: raw.handoffPreference,
     status: raw.status,
     engine: raw.engine,
+    publishedAt: raw.publishedAt,
+    voice: parseAvatarVoiceRecord(raw.voice),
     photoAssets: parseAvatarPhotoAssets(raw.photoAssets),
     consentRecords: parseAvatarConsentRecords(raw.consentRecords),
+    readyKnowledgeSourceCount,
+    previewResponseCount,
     createdAt: raw.createdAt,
     updatedAt: raw.updatedAt
   }
@@ -281,6 +422,10 @@ export function hasCurrentPhotoConsent(avatar: AvatarRecord): boolean {
     currentSourcePhotoId: currentPhoto?.id ?? null,
     consentRecords: avatar.consentRecords
   }).isCurrentConsentValid
+}
+
+export function hasActiveSelectedVoice(avatar: Pick<AvatarRecord, "voice">): boolean {
+  return avatar.voice?.status === "ACTIVE"
 }
 
 export function defaultGreeting(): string {
@@ -328,11 +473,11 @@ export function buildSetupChecklist(avatar: AvatarRecord): AvatarSetupCompletion
     { key: "basics", label: "Basics configured", complete: basicsComplete },
     { key: "photo", label: "Photo uploaded", complete: Boolean(getCurrentSourcePhoto(avatar)) },
     { key: "consent", label: "Consent accepted", complete: hasCurrentPhotoConsent(avatar) },
-    { key: "voice", label: "Voice selected", complete: false },
+    { key: "voice", label: "Voice selected", complete: hasActiveSelectedVoice(avatar) },
     { key: "behavior", label: "Behavior configured", complete: behaviorComplete },
-    { key: "knowledge", label: "Knowledge added", complete: false },
-    { key: "preview", label: "Preview tested", complete: false },
-    { key: "published", label: "Published", complete: false }
+    { key: "knowledge", label: "Knowledge added", complete: avatar.readyKnowledgeSourceCount > 0 },
+    { key: "preview", label: "Preview tested", complete: avatar.previewResponseCount > 0 },
+    { key: "published", label: "Published", complete: avatar.status === AvatarStatus.PUBLISHED }
   ]
 
   const completedCount = checklist.filter(item => item.complete).length
@@ -349,141 +494,392 @@ export function buildSetupChecklist(avatar: AvatarRecord): AvatarSetupCompletion
   }
 }
 
-export async function fetchAvatarsForWorkspace(workspaceId: string): Promise<AvatarRecord[]> {
-  const avatars = await prisma.avatar.findMany({
-    where: { workspaceId },
+function areAvatarBasicsComplete(avatar: AvatarRecord): boolean {
+  return [
+    avatar.name,
+    avatar.displayName,
+    avatar.role,
+    avatar.useCase,
+    avatar.language
+  ].every(hasText)
+}
+
+function isAvatarBehaviorComplete(avatar: AvatarRecord): boolean {
+  return [
+    avatar.greeting,
+    avatar.tone,
+    avatar.answerStyle,
+    avatar.businessInstructions,
+    avatar.fallbackMessage,
+    avatar.leadCapturePreference,
+    avatar.handoffPreference
+  ].every(hasText)
+}
+
+export function buildAvatarPublishReadiness(
+  avatar: AvatarRecord,
+  options: { workspaceIsActive?: boolean } = {}
+): AvatarPublishReadiness {
+  const workspaceIsActive = options.workspaceIsActive ?? true
+  const currentPhoto = getCurrentSourcePhoto(avatar)
+
+  const requirements: AvatarPublishRequirement[] = [
+    {
+      key: "basics",
+      label: "Basics configured",
+      complete: areAvatarBasicsComplete(avatar),
+      detail: "Name, display identity, role, use case, and language are required."
+    },
+    {
+      key: "photo",
+      label: "Photo uploaded and valid",
+      complete: Boolean(currentPhoto),
+      detail: "Upload a valid source photo before publishing."
+    },
+    {
+      key: "consent",
+      label: "Consent accepted for current photo",
+      complete: hasCurrentPhotoConsent(avatar),
+      detail: "Consent must match the latest valid source photo."
+    },
+    {
+      key: "voice",
+      label: "Active voice selected",
+      complete: hasActiveSelectedVoice(avatar),
+      detail: "Select an active voice from the voice library."
+    },
+    {
+      key: "behavior",
+      label: "Behavior configured",
+      complete: isAvatarBehaviorComplete(avatar),
+      detail: "Greeting, tone, answer style, instructions, fallback, lead, and handoff preferences are required."
+    },
+    {
+      key: "knowledge",
+      label: "READY knowledge source available",
+      complete: avatar.readyKnowledgeSourceCount > 0,
+      detail: "At least one workspace knowledge source must be READY."
+    },
+    {
+      key: "preview",
+      label: "Successful preview tested",
+      complete: avatar.previewResponseCount > 0,
+      detail: "Send at least one dashboard preview message that returns a successful avatar response."
+    },
+    {
+      key: "avatarStatus",
+      label: "Avatar is not suspended",
+      complete: avatar.status !== AvatarStatus.SUSPENDED,
+      detail: "Suspended avatars cannot be published."
+    },
+    {
+      key: "workspace",
+      label: "Workspace is active",
+      complete: workspaceIsActive,
+      detail: "Publishing requires a valid active workspace membership."
+    }
+  ]
+
+  const missingRequirements = requirements.filter(requirement => !requirement.complete)
+  const blockingIssues = missingRequirements.map(requirement => requirement.detail)
+  const warnings = [
+    "Publishing makes this avatar eligible for Phase 12 website embed.",
+    "Widget access still requires allowed domain configuration from the Embed dashboard."
+  ]
+
+  return {
+    isReady: missingRequirements.length === 0,
+    completedRequirements: requirements.filter(requirement => requirement.complete),
+    missingRequirements,
+    blockingIssues,
+    warnings
+  }
+}
+
+export function getAvatarStatusAfterUnpublish(avatar: AvatarRecord): AvatarStatus.READY | AvatarStatus.DRAFT {
+  return buildAvatarPublishReadiness(avatar).isReady ? AvatarStatus.READY : AvatarStatus.DRAFT
+}
+
+export function isAvatarPublicRuntimeEligible(avatar: AvatarRecord): boolean {
+  return avatar.status === AvatarStatus.PUBLISHED && buildAvatarPublishReadiness(avatar).isReady
+}
+
+export function isAvatarTextPreviewReady(avatar: AvatarRecord): {
+  ready: boolean
+  missingRequirements: string[]
+} {
+  const missingRequirements: string[] = []
+  if (![
+    avatar.name,
+    avatar.displayName,
+    avatar.role,
+    avatar.useCase,
+    avatar.language,
+    avatar.greeting,
+    avatar.tone,
+    avatar.answerStyle,
+    avatar.businessInstructions,
+    avatar.fallbackMessage
+  ].every(hasText)) {
+    missingRequirements.push("Basics and behavior are incomplete.")
+  }
+
+  if (avatar.readyKnowledgeSourceCount <= 0) {
+    missingRequirements.push("Add at least one READY knowledge source.")
+  }
+
+  return {
+    ready: missingRequirements.length === 0,
+    missingRequirements
+  }
+}
+
+export async function fetchDashboardPreviewConversation(
+  workspaceId: string,
+  avatarId: string
+): Promise<AvatarPreviewConversation | null> {
+  const conversation = await prisma.conversation.findFirst({
+    where: {
+      workspaceId,
+      avatarId,
+      channel: ConversationChannel.DASHBOARD_PREVIEW,
+      status: ConversationStatus.ACTIVE
+    },
     orderBy: { updatedAt: "desc" },
     select: {
       id: true,
-      workspaceId: true,
-      name: true,
-      displayName: true,
-      role: true,
-      useCase: true,
-      language: true,
-      greeting: true,
-      tone: true,
-      answerStyle: true,
-      businessInstructions: true,
-      fallbackMessage: true,
-      leadCapturePreference: true,
-      handoffPreference: true,
       status: true,
-      engine: true,
-      photoAssets: {
-        where: {
-          type: AvatarAssetType.SOURCE_PHOTO,
-          validationStatus: AvatarAssetValidationStatus.VALID
-        },
-        orderBy: { updatedAt: "desc" },
-        take: 1,
+      updatedAt: true,
+      endedAt: true,
+      messages: {
+        orderBy: { createdAt: "asc" },
         select: {
           id: true,
-          storageKey: true,
-          displayUrl: true,
-          originalFileName: true,
-          mimeType: true,
-          sizeBytes: true,
-          width: true,
-          height: true,
-          validationStatus: true,
-          validationIssues: true
+          role: true,
+          content: true,
+          audioUrl: true,
+          videoUrl: true,
+          metadata: true,
+          createdAt: true
         }
-      },
-      consentRecords: {
-        orderBy: { acceptedAt: "desc" },
-        take: 5,
-        select: {
-          id: true,
-          avatarAssetId: true,
-          acceptedByUserId: true,
-          consentType: true,
-          permissionBasis: true,
-          termsVersion: true,
-          acceptedAt: true,
-          createdAt: true,
-          updatedAt: true
-        }
-      },
-      createdAt: true,
-      updatedAt: true
+      }
     }
   })
 
-  return avatars.map(mapAvatarRecord)
+  if (!conversation) {
+    return null
+  }
+
+  return {
+    conversationId: conversation.id,
+    status: conversation.status,
+    updatedAt: conversation.updatedAt.toISOString(),
+    endedAt: conversation.endedAt ? conversation.endedAt.toISOString() : null,
+    messages: conversation.messages.map(message => ({
+      id: message.id,
+      role: message.role,
+      content: message.content,
+      audioUrl: message.audioUrl,
+      videoUrl: message.videoUrl,
+      createdAt: message.createdAt.toISOString(),
+      metadata: parseMessageMetadata(message.metadata)
+    }))
+  }
+}
+
+export async function fetchAvatarsForWorkspace(workspaceId: string): Promise<AvatarRecord[]> {
+  const [avatars, knowledgeSummary] = await Promise.all([
+    prisma.avatar.findMany({
+      where: { workspaceId },
+      orderBy: { updatedAt: "desc" },
+      select: {
+        id: true,
+        workspaceId: true,
+        voiceId: true,
+        name: true,
+        displayName: true,
+        role: true,
+        useCase: true,
+        language: true,
+        greeting: true,
+        tone: true,
+        answerStyle: true,
+        businessInstructions: true,
+        fallbackMessage: true,
+        leadCapturePreference: true,
+        handoffPreference: true,
+        status: true,
+        engine: true,
+        publishedAt: true,
+        voice: {
+          select: {
+            id: true,
+            provider: true,
+            providerVoiceId: true,
+            name: true,
+            language: true,
+            style: true,
+            presentationStyle: true,
+            previewUrl: true,
+            status: true,
+            createdAt: true,
+            updatedAt: true
+          }
+        },
+        photoAssets: {
+          where: {
+            type: AvatarAssetType.SOURCE_PHOTO,
+            validationStatus: AvatarAssetValidationStatus.VALID
+          },
+          orderBy: { updatedAt: "desc" },
+          take: 1,
+          select: {
+            id: true,
+            storageKey: true,
+            displayUrl: true,
+            originalFileName: true,
+            mimeType: true,
+            sizeBytes: true,
+            width: true,
+            height: true,
+            validationStatus: true,
+            validationIssues: true
+          }
+        },
+        consentRecords: {
+          orderBy: { acceptedAt: "desc" },
+          take: 5,
+          select: {
+            id: true,
+            avatarAssetId: true,
+            acceptedByUserId: true,
+            consentType: true,
+            permissionBasis: true,
+            termsVersion: true,
+            acceptedAt: true,
+            createdAt: true,
+            updatedAt: true
+          }
+        },
+        createdAt: true,
+        updatedAt: true
+      }
+    }),
+    fetchKnowledgeSummaryForWorkspace(workspaceId)
+  ])
+
+  const previewResponseCounts = await fetchDashboardPreviewResponseCountsForAvatars(
+    workspaceId,
+    avatars.map(avatar => avatar.id)
+  )
+
+  return avatars.map(avatar => mapAvatarRecord(
+    avatar,
+    knowledgeSummary.readySourceCount,
+    previewResponseCounts[avatar.id] ?? 0
+  ))
 }
 
 export async function fetchAvatarByIdAndWorkspace(
   workspaceId: string,
   avatarId: string
 ): Promise<AvatarRecord | null> {
-  const avatar = await prisma.avatar.findFirst({
-    where: {
-      id: avatarId,
-      workspaceId
-    },
-    select: {
-      id: true,
-      workspaceId: true,
-      name: true,
-      displayName: true,
-      role: true,
-      useCase: true,
-      language: true,
-      greeting: true,
-      tone: true,
-      answerStyle: true,
-      businessInstructions: true,
-      fallbackMessage: true,
-      leadCapturePreference: true,
-      handoffPreference: true,
-      status: true,
-      engine: true,
-      photoAssets: {
-        where: {
-          type: AvatarAssetType.SOURCE_PHOTO,
-          validationStatus: AvatarAssetValidationStatus.VALID
+  const [avatar, knowledgeSummary] = await Promise.all([
+    prisma.avatar.findFirst({
+      where: {
+        id: avatarId,
+        workspaceId
+      },
+      select: {
+        id: true,
+        workspaceId: true,
+        voiceId: true,
+        name: true,
+        displayName: true,
+        role: true,
+        useCase: true,
+        language: true,
+        greeting: true,
+        tone: true,
+        answerStyle: true,
+        businessInstructions: true,
+        fallbackMessage: true,
+        leadCapturePreference: true,
+        handoffPreference: true,
+        status: true,
+        engine: true,
+        publishedAt: true,
+        voice: {
+          select: {
+            id: true,
+            provider: true,
+            providerVoiceId: true,
+            name: true,
+            language: true,
+            style: true,
+            presentationStyle: true,
+            previewUrl: true,
+            status: true,
+            createdAt: true,
+            updatedAt: true
+          }
         },
-        orderBy: { updatedAt: "desc" },
-        take: 1,
-        select: {
-          id: true,
-          storageKey: true,
-          displayUrl: true,
-          originalFileName: true,
-          mimeType: true,
-          sizeBytes: true,
-          width: true,
-          height: true,
-          validationStatus: true,
-          validationIssues: true
-        }
-      },
-      consentRecords: {
-        orderBy: { acceptedAt: "desc" },
-        take: 5,
-        select: {
-          id: true,
-          avatarAssetId: true,
-          acceptedByUserId: true,
-          consentType: true,
-          permissionBasis: true,
-          termsVersion: true,
-          acceptedAt: true,
-          createdAt: true,
-          updatedAt: true
-        }
-      },
-      createdAt: true,
-      updatedAt: true
-    }
-  })
+        photoAssets: {
+          where: {
+            type: AvatarAssetType.SOURCE_PHOTO,
+            validationStatus: AvatarAssetValidationStatus.VALID
+          },
+          orderBy: { updatedAt: "desc" },
+          take: 1,
+          select: {
+            id: true,
+            storageKey: true,
+            displayUrl: true,
+            originalFileName: true,
+            mimeType: true,
+            sizeBytes: true,
+            width: true,
+            height: true,
+            validationStatus: true,
+            validationIssues: true
+          }
+        },
+        consentRecords: {
+          orderBy: { acceptedAt: "desc" },
+          take: 5,
+          select: {
+            id: true,
+            avatarAssetId: true,
+            acceptedByUserId: true,
+            consentType: true,
+            permissionBasis: true,
+            termsVersion: true,
+            acceptedAt: true,
+            createdAt: true,
+            updatedAt: true
+          }
+        },
+        createdAt: true,
+        updatedAt: true
+      }
+    }),
+    fetchKnowledgeSummaryForWorkspace(workspaceId)
+  ])
 
   if (!avatar) {
     return null
   }
 
-  return mapAvatarRecord(avatar)
+  const previewResponseCountRows = await fetchDashboardPreviewResponseCountsForAvatars(
+    workspaceId,
+    [avatar.id]
+  )
+
+  return mapAvatarRecord(
+    avatar,
+    knowledgeSummary.readySourceCount,
+    previewResponseCountRows[avatar.id] ?? 0
+  )
 }
 
 export function formatWorkspaceLocalTime(date: Date, locale = "en-US"): string {

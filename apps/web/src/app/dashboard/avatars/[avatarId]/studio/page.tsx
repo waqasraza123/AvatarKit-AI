@@ -4,15 +4,27 @@ import { redirect } from "next/navigation"
 import {
   AVATAR_STUDIO_STEPS,
   AvatarStudioStep,
+  buildAvatarPublishReadiness,
   buildSetupChecklist,
   fetchAvatarByIdAndWorkspace,
-  formatWorkspaceLocalTime
+  formatWorkspaceLocalTime,
+  fetchDashboardPreviewConversation,
+  getCurrentSourcePhoto,
+  hasActiveSelectedVoice,
+  hasCurrentPhotoConsent,
+  isAvatarTextPreviewReady
 } from "@/lib/avatar"
+import { fetchActiveVoices, isVoiceLanguageCompatible } from "@/lib/avatar-voice"
+import { fetchKnowledgeSummaryForWorkspace } from "@/lib/knowledge"
 import { hasWorkspaceRole, getWorkspaceContextForRequest } from "@/lib/workspace"
 import AvatarBasicsForm from "./_components/avatar-basics-form"
 import AvatarBehaviorForm from "./_components/avatar-behavior-form"
 import AvatarConsentForm from "./_components/avatar-consent-form"
+import AvatarKnowledgePanel from "./_components/avatar-knowledge-panel"
 import AvatarPhotoForm from "./_components/avatar-photo-form"
+import AvatarVoiceForm from "./_components/avatar-voice-form"
+import AvatarPreviewPanel from "./_components/avatar-preview-panel"
+import AvatarPublishPanel from "./_components/avatar-publish-panel"
 
 type SearchParams = Promise<{ step?: AvatarStudioStep | string; workspaceId?: string }>
 type StudioParams = Promise<{ avatarId: string }>
@@ -46,7 +58,14 @@ function stepStateClass(
 }
 
 function isStepAvailable(step: AvatarStudioStep): boolean {
-  return step === "basics" || step === "photo" || step === "consent" || step === "behavior"
+  return step === "basics" ||
+    step === "photo" ||
+    step === "consent" ||
+    step === "voice" ||
+    step === "behavior" ||
+    step === "knowledge" ||
+    step === "preview" ||
+    step === "publish"
 }
 
 function SetupLockedPlaceholder({ stepLabel }: { stepLabel: string }) {
@@ -55,11 +74,23 @@ function SetupLockedPlaceholder({ stepLabel }: { stepLabel: string }) {
       <h3>{stepLabel} is a future phase</h3>
       <p>Coming in a later phase. This step remains locked to keep the rollout disciplined.</p>
       <p>
-        This placeholder confirms workspace flow and avoids exposing future controls such as voice selection,
-        knowledge attachment, preview actions, and publishing.
+        This placeholder confirms workspace flow and avoids exposing future controls such as preview actions
+        and publishing.
       </p>
     </section>
   )
+}
+
+function formatPublishReadinessLabel(status: AvatarStatus, isReady: boolean): string {
+  if (status === AvatarStatus.SUSPENDED) {
+    return "Suspended"
+  }
+
+  if (status === AvatarStatus.PUBLISHED) {
+    return "Published"
+  }
+
+  return isReady ? "Ready to publish" : "Setup incomplete"
 }
 
 export default async function AvatarStudioPage({
@@ -86,8 +117,25 @@ export default async function AvatarStudioPage({
 
   const activeStep = normalizeStep(rawStep)
   const canEdit = hasWorkspaceRole(context.workspaceMembership.role, WorkspaceRole.OPERATOR)
+  const canPublish = canEdit
   const canAcceptConsent = canEdit && avatar.status !== AvatarStatus.SUSPENDED
+  const canEditVoice = canEdit && avatar.status !== AvatarStatus.SUSPENDED
   const completion = buildSetupChecklist(avatar)
+  const publishReadiness = buildAvatarPublishReadiness(avatar, { workspaceIsActive: true })
+  const publishReadinessLabel = formatPublishReadinessLabel(avatar.status, publishReadiness.isReady)
+  const previewReadiness = isAvatarTextPreviewReady(avatar)
+  const currentSourcePhoto = getCurrentSourcePhoto(avatar)
+  const hasVideoConsent = hasCurrentPhotoConsent(avatar)
+  const hasVideoVoice = hasActiveSelectedVoice(avatar) && Boolean(
+    avatar.voice && isVoiceLanguageCompatible(avatar.language, avatar.voice.language)
+  )
+  const voices = activeStep === "voice" ? await fetchActiveVoices() : []
+  const knowledgeSummary = activeStep === "knowledge"
+    ? await fetchKnowledgeSummaryForWorkspace(context.workspace.id)
+    : null
+  const previewConversation = activeStep === "preview"
+    ? await fetchDashboardPreviewConversation(context.workspace.id, avatar.id)
+    : null
 
   return (
     <main className="content-area">
@@ -95,8 +143,7 @@ export default async function AvatarStudioPage({
         <p className="eyebrow">Avatar Studio</p>
         <h1>{avatar.displayName}</h1>
         <p className="hero-copy section-subtitle">
-          Configure available steps and return later. Unavailable phases remain clearly locked until
-          implemented.
+          Configure setup steps, test an internal preview, and publish only when readiness checks pass.
         </p>
         <div className="avatar-studio-meta">
           <p>
@@ -104,6 +151,7 @@ export default async function AvatarStudioPage({
           </p>
           <p>Last updated {formatWorkspaceLocalTime(avatar.updatedAt)}</p>
           <p>Setup: {completion.percentComplete}% complete</p>
+          <p>Publish readiness: {publishReadinessLabel}</p>
         </div>
         <ul className="setup-checklist">
           {completion.checklist.map(item => (
@@ -114,7 +162,7 @@ export default async function AvatarStudioPage({
           ))}
         </ul>
       </section>
-      <div className="studio-layout">
+        <div className="studio-layout">
         <aside className="content-card studio-sidebar">
           <h2>Studio steps</h2>
           <nav aria-label="Avatar studio steps">
@@ -125,13 +173,20 @@ export default async function AvatarStudioPage({
                 key={step}
               >
                 {step[0].toUpperCase() + step.slice(1)}
-                <span>{isStepAvailable(step) ? "Available" : "Future step"}</span>
+                <span>
+                  {step === "publish"
+                    ? publishReadinessLabel
+                    : isStepAvailable(step)
+                      ? "Available"
+                      : "Future step"}
+                </span>
               </Link>
             ))}
           </nav>
           <p className="form-helper">
-            Voice, knowledge, preview, and publish are placeholders until later phases.
+            Preview supports dashboard-only text, audio, and avatar video. Publish only marks future widget eligibility.
           </p>
+          <p className="form-helper">Public widget access is not available until the widget phase is implemented.</p>
           <p>
             <Link className="avatarkit-link-button" href="/dashboard/avatars">
               Back to all avatars
@@ -157,16 +212,59 @@ export default async function AvatarStudioPage({
               canAcceptConsent={canAcceptConsent}
             />
           ) : null}
+          {activeStep === "voice" ? (
+            <AvatarVoiceForm
+              avatar={avatar}
+              voices={voices}
+              canEditVoice={canEditVoice}
+            />
+          ) : null}
           {activeStep === "behavior" ? (
             <AvatarBehaviorForm
               avatar={avatar}
               canEdit={canEdit}
             />
           ) : null}
+          {activeStep === "knowledge" && knowledgeSummary ? (
+            <AvatarKnowledgePanel summary={knowledgeSummary} />
+          ) : null}
+          {activeStep === "preview" ? (
+            <AvatarPreviewPanel
+              avatarId={avatar.id}
+              avatarName={avatar.name}
+              selectedVoiceName={avatar.voice?.status === "ACTIVE" ? avatar.voice.name : null}
+              currentSourcePhoto={currentSourcePhoto}
+              videoPreconditions={{
+                hasPhoto: Boolean(currentSourcePhoto),
+                hasConsent: hasVideoConsent,
+                hasVoice: hasVideoVoice,
+                isNotSuspended: avatar.status !== AvatarStatus.SUSPENDED
+              }}
+              previewReady={previewReadiness.ready}
+              missingRequirements={previewReadiness.missingRequirements}
+              canSend={canEdit}
+              initialConversation={previewConversation}
+            />
+          ) : null}
+          {activeStep === "publish" ? (
+            <AvatarPublishPanel
+              avatarId={avatar.id}
+              avatarName={avatar.name}
+              status={avatar.status}
+              publishedAt={avatar.publishedAt ? formatWorkspaceLocalTime(avatar.publishedAt) : null}
+              previewResponseCount={avatar.previewResponseCount}
+              readiness={publishReadiness}
+              canPublish={canPublish}
+            />
+          ) : null}
           {activeStep !== "basics" &&
           activeStep !== "photo" &&
           activeStep !== "consent" &&
-          activeStep !== "behavior" ? (
+          activeStep !== "voice" &&
+          activeStep !== "behavior" &&
+          activeStep !== "knowledge" &&
+          activeStep !== "preview" &&
+          activeStep !== "publish" ? (
             <SetupLockedPlaceholder
               stepLabel={activeStep[0].toUpperCase() + activeStep.slice(1)}
             />

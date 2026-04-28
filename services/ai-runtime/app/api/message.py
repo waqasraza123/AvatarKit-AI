@@ -1,0 +1,764 @@
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from typing import Any, Dict, List, Literal
+
+from fastapi import APIRouter, Header, HTTPException
+from pydantic import BaseModel, Field
+
+from app.core.settings import settings
+from app.runtime.providers import (
+    ProviderOutput,
+    RuntimeProviderError,
+    build_runtime_provider,
+)
+from app.runtime.avatar_media import (
+    AvatarAudioReference,
+    AvatarMediaInput,
+    AvatarMediaProviderError,
+    AvatarPhotoReference,
+    AvatarVoiceReference,
+    build_avatar_media_provider,
+)
+from app.runtime.safety import (
+    SafetyDecision,
+    assess_context_match,
+    assess_request_safety,
+    infer_intent,
+)
+from app.runtime.tts import (
+    TtsProviderError,
+    TtsVoiceMetadata,
+    build_tts_provider,
+    encode_audio_base64,
+)
+
+
+router = APIRouter(prefix="/runtime")
+
+
+class RuntimeKnowledgeChunk(BaseModel):
+    id: str
+    sourceId: str
+    sourceTitle: str
+    content: str
+    sourceType: str
+    position: int
+    metadata: Dict[str, Any] | None = None
+
+
+class RuntimeAvatarConfig(BaseModel):
+    avatarId: str
+    greeting: str
+    tone: str
+    answerStyle: str
+    businessInstructions: str
+    fallbackMessage: str
+    leadCapturePreference: str
+    handoffPreference: str
+    language: str
+
+
+class RuntimeVoiceMetadata(BaseModel):
+    id: str
+    provider: str
+    providerVoiceId: str
+    name: str
+    language: str
+    style: str
+    presentationStyle: str
+    status: str
+
+
+class RuntimeAudioOutput(BaseModel):
+    audioBase64: str
+    mimeType: str
+    fileExtension: str
+    usage: Dict[str, Any]
+    provider: str
+    model: str | None = None
+
+
+class RuntimeAudioError(BaseModel):
+    code: str
+    message: str
+    provider: str | None = None
+
+
+class RuntimeAvatarPhotoReference(BaseModel):
+    assetId: str
+    url: str
+    mimeType: str
+    width: int
+    height: int
+
+
+class RuntimeVideoOutput(BaseModel):
+    status: Literal["completed", "processing", "failed"]
+    providerJobId: str | None = None
+    videoUrl: str | None = None
+    videoBase64: str | None = None
+    mimeType: str | None = None
+    fileExtension: str | None = None
+    durationSeconds: float | None = None
+    usage: Dict[str, Any]
+    provider: str
+
+
+class RuntimeVideoError(BaseModel):
+    code: str
+    message: str
+    provider: str | None = None
+
+
+class RuntimeMessageRequest(BaseModel):
+    workspaceId: str
+    avatarId: str
+    conversationId: str
+    messageId: str
+    channel: Literal["DASHBOARD_PREVIEW", "WIDGET", "KIOSK", "API"]
+    inputType: Literal["text"]
+    inputText: str
+    outputMode: Literal["text", "audio", "video"]
+    visitorMessageCount: int = 1
+    avatarConfig: RuntimeAvatarConfig
+    selectedVoiceMetadata: RuntimeVoiceMetadata | None = None
+    avatarPhotoReference: RuntimeAvatarPhotoReference | None = None
+    knowledgeChunks: List[RuntimeKnowledgeChunk] = Field(default_factory=list)
+    visitorLanguage: str | None = None
+
+
+class RuntimeResponseSourceReference(BaseModel):
+    chunkId: str
+    sourceId: str
+    sourceTitle: str | None = None
+    score: float
+
+
+class RuntimeUsage(BaseModel):
+    provider: str
+    elapsedMs: int | None = None
+    mockFallbackUsed: bool | None = None
+    reason: str | None = None
+    retrievedChunkCount: int | None = None
+    matchedChunkCount: int | None = None
+    tokens: Dict[str, int] | None = None
+
+
+class RuntimeLeadCapture(BaseModel):
+    required: bool = False
+    reason: str | None = None
+    fields: List[str] = Field(default_factory=list)
+    promptText: str | None = None
+
+
+class RuntimeMessageResponse(BaseModel):
+    conversationId: str
+    messageId: str
+    status: Literal["ok", "fallback", "blocked", "error"]
+    answer: str
+    intent: str
+    confidence: float
+    leadCaptureDecision: Literal["none", "request"]
+    leadCapture: RuntimeLeadCapture = Field(default_factory=RuntimeLeadCapture)
+    handoffDecision: Literal["none", "request"]
+    usage: RuntimeUsage
+    sourceReferences: List[RuntimeResponseSourceReference]
+    safetyReason: str | None = None
+    audio: RuntimeAudioOutput | None = None
+    audioError: RuntimeAudioError | None = None
+    video: RuntimeVideoOutput | None = None
+    videoError: RuntimeVideoError | None = None
+
+
+class SourceSimilarity:
+    def __init__(self, chunk: RuntimeKnowledgeChunk, score: int) -> None:
+        self.chunk = chunk
+        self.score = score
+
+
+class RuntimeDecision:
+    def __init__(
+        self,
+        status: Literal["ok", "fallback", "blocked", "error"],
+        intent: str,
+        confidence: float,
+        answer: str,
+        lead_capture: RuntimeLeadCapture,
+        handoff_request: bool,
+        usage: Dict[str, Any],
+        source_references: List[RuntimeResponseSourceReference],
+        safety_reason: str | None = None
+    ) -> None:
+        self.status = status
+        self.intent = intent
+        self.confidence = confidence
+        self.answer = answer
+        self.lead_capture = lead_capture
+        self.handoff_request = handoff_request
+        self.usage = usage
+        self.source_references = source_references
+        self.safety_reason = safety_reason
+
+
+def _require_service_token(token: str | None) -> None:
+    expected = settings.ai_runtime_service_token
+    if not expected:
+        raise HTTPException(status_code=500, detail="Service token is not configured.")
+    if token != expected:
+        raise HTTPException(status_code=401, detail="Invalid service token.")
+
+
+def _build_profile_summary(config: RuntimeAvatarConfig) -> str:
+    return (
+        f"Avatar: {config.avatarId}. "
+        f"Tone: {config.tone}. Style: {config.answerStyle}. "
+        f"Business instructions: {config.businessInstructions}. "
+        f"Language: {config.language}."
+    )
+
+
+def _build_context(chunks: List[RuntimeKnowledgeChunk]) -> str:
+    return "\n\n".join(
+        f"[{index + 1}] {chunk.sourceTitle}: {chunk.content}"
+        for index, chunk in enumerate(chunks)
+    )
+
+
+def _score_chunk_for_query(chunk: RuntimeKnowledgeChunk, query_terms: List[str]) -> int:
+    normalized_chunk = chunk.content.lower()
+    score = 0
+    for term in query_terms:
+        if term and f" {term} " in f" {normalized_chunk} ":
+            score += normalized_chunk.count(term)
+    return score
+
+
+def _build_source_references(
+    chunks: List[RuntimeKnowledgeChunk],
+    query_terms: List[str]
+) -> List[RuntimeResponseSourceReference]:
+    scored_chunks = [
+        SourceSimilarity(chunk, _score_chunk_for_query(chunk, query_terms))
+        for chunk in chunks
+    ]
+    scored_chunks.sort(key=lambda item: item.score, reverse=True)
+
+    if not scored_chunks:
+        return []
+
+    top_chunks = [
+        item for item in scored_chunks
+        if item.score > 0
+    ]
+
+    if not top_chunks:
+        top_chunks = scored_chunks[:6]
+
+    return [
+        RuntimeResponseSourceReference(
+            chunkId=item.chunk.id,
+            sourceId=item.chunk.sourceId,
+            sourceTitle=item.chunk.sourceTitle,
+            score=float(item.score)
+        )
+        for item in top_chunks[:6]
+    ]
+
+
+def _build_prompt(text: str, profile_summary: str, chunks: List[RuntimeKnowledgeChunk]) -> str:
+    return (
+        f"{profile_summary}\n\n"
+        f"Input: {text}\n\n"
+        f"Knowledge:\n{_build_context(chunks)}"
+    )
+
+
+def _resolve_handoff_decision(
+    status: Literal["ok", "fallback", "blocked", "error"],
+    safety: SafetyDecision,
+    matched: bool
+) -> Literal["none", "request"]:
+    if status == "blocked":
+        return "request"
+    if safety.handoff_requested:
+        return "request"
+    if not matched and status == "fallback":
+        return "request"
+    return "none"
+
+
+BUYING_INTENT_KEYWORDS = [
+    "price",
+    "pricing",
+    "quote",
+    "book",
+    "appointment",
+    "call",
+    "contact",
+    "schedule",
+    "interested",
+    "buy",
+    "hire",
+    "property viewing",
+    "demo",
+]
+
+
+def _lead_capture_request(reason: str) -> RuntimeLeadCapture:
+    prompt_text = (
+        "Share your contact details and a short note so the team can follow up with the right next step."
+    )
+    if reason == "buying_intent":
+        prompt_text = "Share your contact details and what you need, and the team can follow up about availability or next steps."
+    elif reason == "cannot_answer":
+        prompt_text = "I may not have enough approved information here. Share your details and the team can follow up."
+    elif reason == "message_threshold":
+        prompt_text = "If you would like a team member to continue from here, share your contact details."
+
+    return RuntimeLeadCapture(
+        required=True,
+        reason=reason,
+        fields=["name", "email", "phone", "message"],
+        promptText=prompt_text,
+    )
+
+
+def _has_buying_intent(text: str) -> bool:
+    normalized = text.lower()
+    return any(keyword in normalized for keyword in BUYING_INTENT_KEYWORDS)
+
+
+def _resolve_lead_capture(
+    request: RuntimeMessageRequest,
+    status: Literal["ok", "fallback", "blocked", "error"],
+    confidence: float
+) -> RuntimeLeadCapture:
+    preference = request.avatarConfig.leadCapturePreference.strip().lower()
+    if preference == "never automatically ask":
+        return RuntimeLeadCapture()
+
+    if preference == "ask when visitor shows buying intent" and _has_buying_intent(request.inputText):
+        return _lead_capture_request("buying_intent")
+
+    if preference == "ask when avatar cannot answer" and (status in ("fallback", "error") or confidence < 0.32):
+        return _lead_capture_request("cannot_answer")
+
+    if preference == "ask after a few messages" and request.visitorMessageCount >= 3:
+        return _lead_capture_request("message_threshold")
+
+    return RuntimeLeadCapture()
+
+
+def _normalize_query(text: str) -> List[str]:
+    normalized = text.lower().strip()
+    terms = normalized.replace("\n", " ").replace("\r", " ").replace("\t", " ").split(" ")
+    return [token for token in terms if len(token) > 2]
+
+
+async def _run_with_provider(
+    prompt: str,
+    context: str,
+    profile_summary: str,
+    fallback_message: str
+) -> tuple[ProviderOutput, str]:
+    provider, provider_name = build_runtime_provider()
+    output = await provider.answer_question(
+        prompt=prompt,
+        context=context,
+        profile_summary=profile_summary,
+        fallback_message=fallback_message
+    )
+    output.usage["provider"] = provider_name
+    return output, provider_name
+
+
+def _build_error_payload(
+    request: RuntimeMessageRequest,
+    elapsed_ms: int,
+    provider_name: str,
+    reason: str
+) -> RuntimeMessageResponse:
+    lead_capture = _resolve_lead_capture(request, "error", 0.18)
+    return RuntimeMessageResponse(
+        conversationId=request.conversationId,
+        messageId=request.messageId,
+        status="error",
+        answer=(
+            "I’m sorry, I can’t produce a reliable answer right now. "
+            "Please review this in a support workflow."
+        ),
+        intent="runtime_failure",
+        confidence=0.18,
+        leadCaptureDecision="request" if lead_capture.required else "none",
+        leadCapture=lead_capture,
+        handoffDecision="request",
+        usage=RuntimeUsage(
+            provider=provider_name,
+            elapsedMs=elapsed_ms,
+            mockFallbackUsed=True,
+            reason=reason,
+            retrievedChunkCount=0,
+            matchedChunkCount=0
+        ),
+        sourceReferences=[],
+        safetyReason=None,
+        audio=None,
+        audioError=None,
+        video=None,
+        videoError=None
+    )
+
+
+async def _generate_audio_for_response(
+    request: RuntimeMessageRequest,
+    answer: str
+) -> tuple[RuntimeAudioOutput | None, RuntimeAudioError | None]:
+    if request.outputMode not in ("audio", "video"):
+        return None, None
+
+    if request.selectedVoiceMetadata is None:
+        return None, RuntimeAudioError(
+            code="missing_voice",
+            message="A selected active voice is required for audio output.",
+            provider=None
+        )
+
+    if request.selectedVoiceMetadata.status != "ACTIVE":
+        return None, RuntimeAudioError(
+            code="inactive_voice",
+            message="The selected voice is inactive.",
+            provider=request.selectedVoiceMetadata.provider
+        )
+
+    provider = build_tts_provider()
+    try:
+        output = await provider.generate_audio(
+            text=answer,
+            voice=TtsVoiceMetadata(
+                id=request.selectedVoiceMetadata.id,
+                provider=request.selectedVoiceMetadata.provider,
+                provider_voice_id=request.selectedVoiceMetadata.providerVoiceId,
+                name=request.selectedVoiceMetadata.name,
+                language=request.selectedVoiceMetadata.language,
+                style=request.selectedVoiceMetadata.style,
+                presentation_style=request.selectedVoiceMetadata.presentationStyle,
+                status=request.selectedVoiceMetadata.status
+            ),
+            language=request.visitorLanguage or request.avatarConfig.language
+        )
+    except TtsProviderError as error:
+        return None, RuntimeAudioError(
+            code="tts_provider_failed",
+            message=str(error),
+            provider=provider.name
+        )
+    except Exception:
+        return None, RuntimeAudioError(
+            code="tts_provider_failed",
+            message="TTS provider failed to generate audio.",
+            provider=provider.name
+        )
+
+    return RuntimeAudioOutput(
+        audioBase64=encode_audio_base64(output.audio_bytes),
+        mimeType=output.mime_type,
+        fileExtension=output.file_extension,
+        usage=output.usage,
+        provider=output.metadata.provider,
+        model=output.metadata.model
+    ), None
+
+
+async def _generate_video_for_response(
+    request: RuntimeMessageRequest,
+    answer: str,
+    audio: RuntimeAudioOutput | None
+) -> tuple[RuntimeVideoOutput | None, RuntimeVideoError | None]:
+    if request.outputMode != "video":
+        return None, None
+
+    if request.avatarPhotoReference is None:
+        return None, RuntimeVideoError(
+            code="missing_photo",
+            message="A valid avatar source photo is required for video output.",
+            provider=None
+        )
+
+    if request.selectedVoiceMetadata is None:
+        return None, RuntimeVideoError(
+            code="missing_voice",
+            message="A selected active voice is required for video output.",
+            provider=None
+        )
+
+    provider = build_avatar_media_provider()
+    try:
+        output = await provider.generate_video(
+            AvatarMediaInput(
+                workspace_id=request.workspaceId,
+                avatar_id=request.avatarId,
+                conversation_id=request.conversationId,
+                message_id=request.messageId,
+                photo=AvatarPhotoReference(
+                    asset_id=request.avatarPhotoReference.assetId,
+                    url=request.avatarPhotoReference.url,
+                    mime_type=request.avatarPhotoReference.mimeType,
+                    width=request.avatarPhotoReference.width,
+                    height=request.avatarPhotoReference.height
+                ),
+                text=answer,
+                language=request.visitorLanguage or request.avatarConfig.language,
+                voice=AvatarVoiceReference(
+                    id=request.selectedVoiceMetadata.id,
+                    provider=request.selectedVoiceMetadata.provider,
+                    provider_voice_id=request.selectedVoiceMetadata.providerVoiceId,
+                    name=request.selectedVoiceMetadata.name,
+                    language=request.selectedVoiceMetadata.language,
+                    style=request.selectedVoiceMetadata.style,
+                    presentation_style=request.selectedVoiceMetadata.presentationStyle,
+                    status=request.selectedVoiceMetadata.status
+                ),
+                audio=AvatarAudioReference(
+                    audio_base64=audio.audioBase64 if audio else None,
+                    mime_type=audio.mimeType if audio else None,
+                    file_extension=audio.fileExtension if audio else None,
+                    url=None,
+                    provider=audio.provider if audio else None
+                ) if audio else None
+            )
+        )
+    except AvatarMediaProviderError as error:
+        return None, RuntimeVideoError(
+            code=error.code,
+            message=error.message,
+            provider=provider.name
+        )
+    except Exception:
+        return None, RuntimeVideoError(
+            code="avatar_video_provider_failed",
+            message="Avatar media provider failed to generate video.",
+            provider=provider.name
+        )
+
+    if output.status == "failed":
+        return None, RuntimeVideoError(
+            code=output.error_code or "avatar_video_failed",
+            message=output.error_message or "Avatar video generation failed.",
+            provider=provider.name
+        )
+
+    return RuntimeVideoOutput(
+        status=output.status,
+        providerJobId=output.provider_job_id,
+        videoUrl=output.video_url,
+        videoBase64=output.video_base64,
+        mimeType=output.mime_type,
+        fileExtension=output.file_extension,
+        durationSeconds=output.duration_seconds,
+        usage=output.usage or {
+            "requests": 1,
+            "seconds": output.duration_seconds,
+            "provider": provider.name
+        },
+        provider=provider.name
+    ), None
+
+
+@router.post("/message", response_model=RuntimeMessageResponse)
+async def runtime_message(
+    request: RuntimeMessageRequest,
+    x_service_token: str | None = Header(default=None)
+) -> RuntimeMessageResponse:
+    _require_service_token(x_service_token)
+
+    user_input = request.inputText.strip()
+    if not user_input:
+        raise HTTPException(status_code=400, detail="inputText is required.")
+
+    started_at = datetime.now(UTC)
+    chunks = list(request.knowledgeChunks)
+    query_terms = _normalize_query(user_input)
+    query_terms.extend(_normalize_query(request.avatarConfig.businessInstructions))
+    match_count, matched_chunk_count = assess_context_match(user_input, [
+        {"content": chunk.content} for chunk in chunks
+    ])
+
+    safety = assess_request_safety(user_input)
+    intent = infer_intent(user_input, len(chunks) > 0, matched_chunk_count > 0)
+    source_references = _build_source_references(chunks, query_terms)
+
+    if not chunks:
+        elapsed_ms = int((datetime.now(UTC) - started_at).total_seconds() * 1000)
+        answer = (
+            f"{request.avatarConfig.fallbackMessage} "
+            "There are no approved knowledge chunks available for this workspace right now."
+        )
+        audio, audio_error = await _generate_audio_for_response(request, answer)
+        video, video_error = await _generate_video_for_response(request, answer, audio)
+        lead_capture = _resolve_lead_capture(request, "fallback", 0.2)
+        return RuntimeMessageResponse(
+            conversationId=request.conversationId,
+            messageId=request.messageId,
+            status="fallback",
+            answer=answer,
+            intent=intent,
+            confidence=0.2,
+            leadCaptureDecision="request" if lead_capture.required else "none",
+            leadCapture=lead_capture,
+            handoffDecision="request",
+            usage=RuntimeUsage(
+                provider="MOCK",
+                elapsedMs=elapsed_ms,
+                mockFallbackUsed=True,
+                reason="missing_knowledge",
+                retrievedChunkCount=0,
+                matchedChunkCount=0
+            ),
+            sourceReferences=[],
+            safetyReason=None,
+            audio=audio,
+            audioError=audio_error,
+            video=video,
+            videoError=video_error
+        )
+
+    if not safety.allowed:
+        elapsed_ms = int((datetime.now(UTC) - started_at).total_seconds() * 1000)
+        answer = (
+            "I can’t provide that request safely here. This is a guarded preview experience and "
+            "definitive legal, medical, or financial advice is intentionally blocked."
+        )
+        audio, audio_error = await _generate_audio_for_response(request, answer)
+        video, video_error = await _generate_video_for_response(request, answer, audio)
+        lead_capture = _resolve_lead_capture(request, "blocked", safety.confidence)
+        return RuntimeMessageResponse(
+            conversationId=request.conversationId,
+            messageId=request.messageId,
+            status="blocked",
+            answer=answer,
+            intent=safety.intent,
+            confidence=safety.confidence,
+            leadCaptureDecision="request" if lead_capture.required else "none",
+            leadCapture=lead_capture,
+            handoffDecision="request",
+            usage=RuntimeUsage(
+                provider="MOCK",
+                elapsedMs=elapsed_ms,
+                mockFallbackUsed=True,
+                reason="safety_blocked",
+                retrievedChunkCount=len(chunks),
+                matchedChunkCount=matched_chunk_count
+            ),
+            sourceReferences=[],
+            safetyReason=safety.reason,
+            audio=audio,
+            audioError=audio_error,
+            video=video,
+            videoError=video_error
+        )
+
+    context = _build_context(chunks)
+    prompt = _build_prompt(user_input, _build_profile_summary(request.avatarConfig), chunks)
+
+    try:
+        provider_output, provider_name = await _run_with_provider(
+            prompt=prompt,
+            context=context,
+            profile_summary=_build_profile_summary(request.avatarConfig),
+            fallback_message=request.avatarConfig.fallbackMessage
+        )
+    except RuntimeProviderError as error:
+        return _build_error_payload(
+            request=request,
+            elapsed_ms=int((datetime.now(UTC) - started_at).total_seconds() * 1000),
+            provider_name="MOCK",
+            reason=str(error)
+        )
+    except Exception:
+        return _build_error_payload(
+            request=request,
+            elapsed_ms=int((datetime.now(UTC) - started_at).total_seconds() * 1000),
+            provider_name="MOCK",
+            reason="provider_execution_failed"
+        )
+
+    elapsed_ms = int((datetime.now(UTC) - started_at).total_seconds() * 1000)
+    response_text = provider_output.answer.strip() or request.avatarConfig.fallbackMessage
+
+    if not response_text:
+        response_text = request.avatarConfig.fallbackMessage
+
+    match_ratio = 0.0
+    if len(user_input) > 0:
+        match_ratio = min(0.97, 0.2 + (match_count / max(1, len(user_input))))
+
+    response_status: Literal["ok", "fallback", "blocked", "error"] = "ok"
+    if match_count == 0 and " " in user_input and query_terms:
+        response_status = "fallback"
+    elif match_ratio < 0.32 and matched_chunk_count == 0:
+        response_status = "fallback"
+
+    usage_payload = provider_output.usage.copy()
+    usage_payload["elapsedMs"] = elapsed_ms
+    usage_payload["retrievedChunkCount"] = len(chunks)
+    usage_payload["matchedChunkCount"] = matched_chunk_count
+
+    if "provider" not in usage_payload:
+        usage_payload["provider"] = provider_name
+
+    if "mockFallbackUsed" not in usage_payload:
+        usage_payload["mockFallbackUsed"] = provider_name == "MOCK"
+
+    if response_status == "ok" and response_text == request.avatarConfig.fallbackMessage:
+        response_status = "fallback"
+
+    decision = RuntimeDecision(
+        status=response_status,
+        intent=intent,
+        confidence=match_ratio,
+        answer=response_text,
+        lead_capture=_resolve_lead_capture(request, response_status, match_ratio),
+        handoff_request=(
+            _resolve_handoff_decision(response_status, safety, matched_chunk_count > 0) == "request"
+        ),
+        usage=usage_payload,
+        source_references=source_references
+    )
+
+    if decision.status == "blocked":
+        decision.safety_reason = safety.reason
+
+    audio, audio_error = await _generate_audio_for_response(request, decision.answer)
+    video, video_error = await _generate_video_for_response(request, decision.answer, audio)
+
+    return RuntimeMessageResponse(
+        conversationId=request.conversationId,
+        messageId=request.messageId,
+        status=decision.status,
+        answer=decision.answer,
+        intent=decision.intent,
+        confidence=decision.confidence,
+        leadCaptureDecision="request" if decision.lead_capture.required else "none",
+        leadCapture=decision.lead_capture,
+        handoffDecision="request" if decision.handoff_request else "none",
+        usage=RuntimeUsage(
+            provider=str(usage_payload.get("provider", "MOCK")),
+            elapsedMs=int(usage_payload.get("elapsedMs", 0)),
+            mockFallbackUsed=bool(usage_payload.get("mockFallbackUsed", False)),
+            reason=str(usage_payload.get("reason", "")) if usage_payload.get("reason") else None,
+            retrievedChunkCount=int(usage_payload.get("retrievedChunkCount", 0)),
+            matchedChunkCount=int(usage_payload.get("matchedChunkCount", matched_chunk_count)),
+            tokens=(
+                {key: int(value) for key, value in usage_payload.get("tokens", {}).items()}
+                if isinstance(usage_payload.get("tokens"), dict)
+                else None
+            )
+        ),
+        sourceReferences=decision.source_references,
+        safetyReason=decision.safety_reason,
+        audio=audio,
+        audioError=audio_error,
+        video=video,
+        videoError=video_error
+    )
