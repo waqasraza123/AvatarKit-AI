@@ -45,6 +45,7 @@ model Workspace {
   realtimeSessions RealtimeSession[]
   apiKeys          ApiKey[]
   webhookEndpoints WebhookEndpoint[]
+  billingAccount   BillingAccount?
 }
 
 model Avatar {
@@ -485,6 +486,29 @@ model WebhookEndpoint {
   @@index([createdByUserId])
 }
 
+model BillingAccount {
+  id                     String        @id @default(cuid())
+  workspaceId            String        @unique
+  plan                   BillingPlan   @default(FREE)
+  status                 BillingStatus @default(ACTIVE)
+  billingEmail           String?
+  externalCustomerId     String?
+  externalSubscriptionId String?
+  currentPeriodStart     DateTime?
+  currentPeriodEnd       DateTime?
+  cancelAtPeriodEnd      Boolean       @default(false)
+  metadata               Json?
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([plan])
+  @@index([status])
+  @@index([externalCustomerId])
+  @@index([externalSubscriptionId])
+}
+
 model ConsentRecord {
   id                String          @id @default(cuid())
   workspaceId       String
@@ -634,6 +658,22 @@ enum LeadSource {
   DASHBOARD_PREVIEW
   KIOSK
   API
+}
+
+enum BillingPlan {
+  FREE
+  STARTER
+  GROWTH
+  AGENCY
+  ENTERPRISE
+}
+
+enum BillingStatus {
+  ACTIVE
+  TRIALING
+  PAST_DUE
+  CANCELED
+  INCOMPLETE
 }
 
 enum RuntimeTraceStatus {

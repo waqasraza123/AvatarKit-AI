@@ -54,6 +54,9 @@ auth, workspace isolation, dashboard shell, and future avatar/knowledge/runtime 
   - `RealtimeSessionStatus` enum
   - `ApiKey`
   - `WebhookEndpoint`
+  - `BillingAccount`
+  - `BillingPlan` enum
+  - `BillingStatus` enum
   - `Lead`
   - `LeadStatus` enum
   - `LeadSource` enum
@@ -71,7 +74,7 @@ auth, workspace isolation, dashboard shell, and future avatar/knowledge/runtime 
 
 ## Current Phase
 
-Phase 19 is now implemented pending manual approval: Developer SDK and Public API.
+Phase 20 is now implemented pending manual approval: Billing Foundation.
 
 ## Completed Major Slices
 
@@ -188,6 +191,10 @@ Phase 19 is now implemented pending manual approval: Developer SDK and Public AP
 - Public API runtime persists conversations with `ConversationChannel.API` and leads with `LeadSource.API`.
 - Public API runtime reuses the private TypeScript-to-Python runtime path and records messages, runtime traces, usage events, safety events, and knowledge gaps.
 - `packages/sdk` is the first React SDK package with provider, client, session hook, lead submission, and talking avatar component.
+- First-class `BillingAccount` model now stores workspace-scoped plan, status, future provider identifiers, optional period dates, billing email, cancel-at-period-end state, and metadata.
+- Static billing plan configuration now defines Free, Starter, Growth, Agency, and Enterprise limits in `apps/web/src/lib/billing.ts`.
+- `/dashboard/billing` is a real billing foundation page with current plan, billing status, current period, current-month usage mapped to plan limits, soft warnings, plan comparison, upgrade placeholder, and billing history placeholder.
+- Billing usage maps existing workspace data to limits for avatars, monthly conversations, video minutes, voice minutes, knowledge sources, team members, widget domains, and API keys.
 
 ## Important Decisions
 
@@ -253,17 +260,21 @@ Phase 19 is now implemented pending manual approval: Developer SDK and Public AP
 - Phase 19 public API conversations use `ConversationChannel.API`; widget domain allowlists remain widget-only.
 - Phase 19 webhook endpoint registration stores signing secret hashes and documents HMAC signing semantics; delivery workers remain deferred.
 - Phase 19 browser SDK usage must go through an application-owned proxy or short-lived server-issued token; raw `avk_live_...` keys are trusted-server credentials only.
+- Phase 20 billing foundation defaults workspaces without a `BillingAccount` row to Free and Active.
+- Phase 20 plan limits are static TypeScript configuration, not payment-provider state.
+- Phase 20 soft warnings do not block avatar creation, publish, runtime responses, media generation, widget access, or public API access.
+- Phase 20 billing period usage and display default to the current calendar month unless explicit `BillingAccount` period dates exist.
 
 ## Non-Negotiable Rules (still active)
 
 - Preserve existing architecture conventions and phase boundaries.
 - Do not add production logic for future phases ahead of their designated order.
 - Strong validation at request/action boundaries.
-- No future feature flows beyond Phase 19 public API/SDK: no Stripe, checkout, subscriptions, invoices, payment methods, billing portal, hard usage blocking, paid plan upgrades, inline widget voice input upload, continuous listening, WebRTC avatar calls, barge-in/interruption handling, kiosk mode, operator handoff workflow, CRM sync, notifications, webhook delivery workers, 3D rendering, voice cloning, custom voice upload, public identity verification, KYC, biometric face recognition, external celebrity detection, or self-hosted avatar engine.
+- No future feature flows beyond Phase 20 billing foundation: no Stripe, checkout, subscriptions, invoices, payment methods, billing portal, hard usage blocking, automatic plan mutation, paid feature gates, inline widget voice input upload, continuous listening, WebRTC avatar calls, barge-in/interruption handling, kiosk mode, operator handoff workflow, CRM sync, notifications, webhook delivery workers, 3D rendering, voice cloning, custom voice upload, public identity verification, KYC, biometric face recognition, external celebrity detection, or self-hosted avatar engine.
 
 ## Current Next Step
 
-Phase 19 implementation is pending manual approval in `docs/development.md` and `docs/development/phase-19-public-api-sdk.md`.
+Phase 20 implementation is pending manual approval in `docs/development.md` and `docs/development/phase-20-billing-foundation.md`.
 
 ## Verification Commands (manual, user-run)
 

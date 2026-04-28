@@ -191,6 +191,14 @@
   - Webhook signatures use HMAC-SHA256 over `<timestamp>.<raw_json_body>`.
   - The SDK package is a thin React/client wrapper over public API v1 and must not embed private provider credentials.
 - Phase 19 must not add billing enforcement, Stripe, public arbitrary avatar/knowledge mutation, webhook delivery workers, CRM integrations, browser-safe publishable keys, public media-token APIs for API-channel media, WebRTC calls, 3D rendering, or self-hosted runtime work.
+- Phase 20 adds billing foundation only:
+  - `BillingAccount` is workspace-scoped and stores plan/status/provider placeholder fields without requiring a payment provider.
+  - Plan limits are static TypeScript configuration and map existing workspace resources plus current-month usage into limit rows.
+  - Workspaces without billing account rows default to Free and Active for backward compatibility.
+  - `/dashboard/billing` may show soft warnings near or above limits.
+  - Billing period usage and display default to the current calendar month unless explicit billing account period dates exist.
+  - Upgrade and billing history UI must remain placeholders until payment provider integration exists.
+- Phase 20 must not add Stripe, checkout, invoices, payment methods, billing portal links, automatic plan mutation, hard usage blocking, paid feature gates, tax handling, coupons, metered invoicing, or customer balance logic.
 
 ## Phase 1 decisions (implemented)
 

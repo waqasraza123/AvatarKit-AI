@@ -86,7 +86,7 @@ function UsageOverview({ data }: { data: UsageDashboardData }) {
         </div>
         <div className="usage-billing-note">
           <strong>Not a bill</strong>
-          <span>Billing plans come later.</span>
+          <span>Plan limits live in Billing.</span>
         </div>
       </div>
       <UsagePeriodFilter currentPeriod={data.period} />

@@ -1,5 +1,21 @@
 # Development
 
+## Phase 20 - Billing Foundation
+
+Detailed Phase 20 billing foundation notes live in `docs/development/phase-20-billing-foundation.md`.
+
+Phase 20 adds:
+
+- workspace billing account schema foundation
+- static plan definitions for Free, Starter, Growth, Agency, and Enterprise
+- plan limits for avatars, conversations, media minutes, knowledge sources, members, domains, and API keys
+- `/dashboard/billing`
+- current-month usage mapping to plan limits
+- soft warnings near or over limits
+- upgrade and billing history placeholders
+
+Verification was intentionally not run for the implementation pass requested on April 29, 2026. Before approving this phase manually, generate Prisma client, apply a migration, and follow the checklist in `docs/development/phase-20-billing-foundation.md`.
+
 ## Phase 19 - Developer SDK and Public API
 
 Detailed Phase 19 integration notes live in `docs/development/phase-19-public-api-sdk.md`.
