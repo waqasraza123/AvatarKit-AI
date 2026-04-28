@@ -64,6 +64,21 @@ export function buildAvatarVideoDisplayUrl(assetId: string): string {
   return `/api/avatar-assets/${assetId}/preview`
 }
 
+export function buildAvatarVoiceInputStorageKey(params: {
+  workspaceId: string
+  avatarId: string
+  conversationId: string
+  messageId: string
+  assetId: string
+  fileExtension: string
+}): string {
+  return `workspaces/${params.workspaceId}/avatars/${params.avatarId}/conversations/${params.conversationId}/messages/${params.messageId}/voice-input/${params.assetId}.${params.fileExtension}`
+}
+
+export function buildAvatarVoiceInputDisplayUrl(assetId: string): string {
+  return `/api/avatar-assets/${assetId}/preview`
+}
+
 export function resolveAvatarAssetPath(storageKey: string): string {
   assertSafeStorageKey(storageKey)
   return path.join(storageRoot, storageKey)

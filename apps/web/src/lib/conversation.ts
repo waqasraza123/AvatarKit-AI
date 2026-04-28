@@ -187,6 +187,15 @@ function buildMetadataBadges(metadata: ConversationMessageMetadata | null): Mess
 
   const badges: MessageMetadataBadge[] = []
   const runtimeStatus = parseStringValue(metadata.runtimeStatus)
+  const inputType = parseStringValue(metadata.inputType)
+  if (inputType) {
+    badges.push({
+      label: "Input",
+      value: inputType,
+      tone: inputType === "audio" ? "success" : "normal"
+    })
+  }
+
   if (runtimeStatus) {
     badges.push({
       label: "Runtime",
@@ -285,6 +294,15 @@ function buildMetadataBadges(metadata: ConversationMessageMetadata | null): Mess
     badges.push({
       label: "TTS chars",
       value: String(ttsCharacters),
+      tone: "normal"
+    })
+  }
+
+  const sttConfidence = metadata.sttConfidence
+  if (typeof sttConfidence === "number") {
+    badges.push({
+      label: "STT confidence",
+      value: `${Math.round(sttConfidence * 100)}%`,
       tone: "normal"
     })
   }

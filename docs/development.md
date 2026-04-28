@@ -1099,6 +1099,195 @@ Empty state explains leads appear when visitors submit contact details through t
 
 Manual approval is pending until these checks are run by the project owner.
 
+## Phase 14 - Voice Input v1
+
+### Implemented this phase
+
+- Added push-to-talk voice input for Avatar Studio Preview.
+- Added a Python STT provider boundary in `services/ai-runtime/app/runtime/stt.py`.
+- Extended the internal runtime request contract with:
+  - `inputType: "text" | "audio"`
+  - `audioInput`
+  - `transcription` response metadata
+- Added STT providers:
+  - `MOCK`: no external API key required; returns `AI_RUNTIME_MOCK_STT_TRANSCRIPT` or a safe default transcript.
+  - `OPENAI_WHISPER`: optional, used only when `AI_RUNTIME_STT_PROVIDER=OPENAI_WHISPER` and `OPENAI_API_KEY` is configured.
+  - `DEEPGRAM`: optional, used only when `AI_RUNTIME_STT_PROVIDER=DEEPGRAM` and `DEEPGRAM_API_KEY` is configured.
+- Added private voice input media type:
+  - `AvatarAssetType.VOICE_INPUT_AUDIO`
+- Stored dashboard voice recordings under ignored local storage:
+  - `.data/uploads/avatar-assets/workspaces/[workspaceId]/avatars/[avatarId]/conversations/[conversationId]/messages/[messageId]/voice-input/[assetId].[extension]`
+- Avatar Studio Preview now supports:
+  - microphone button
+  - permission denied state
+  - unsupported browser fallback
+  - recording state
+  - stop recording action
+  - recording timer
+  - upload/transcribing state
+  - transcript preview after successful transcription
+  - text input fallback
+- Conversation detail now displays visitor voice input audio and STT metadata.
+- Runtime trace foundations now include:
+  - `stt.started`
+  - `stt.completed`
+  - `stt.failed`
+  - `audio_input.stored`
+  - `audio_input.failed`
+
+### Phase 14 STT provider architecture
+
+- Python owns STT provider execution.
+- TypeScript dashboard code validates and stores the recording, then sends an internal audio payload/reference to the Python runtime.
+- Provider-specific details remain inside Python adapters.
+- UI components receive product-level transcript/error state and do not receive provider-specific raw payloads.
+- `AI_RUNTIME_STT_PROVIDER` selects the provider.
+- Missing real-provider keys do not crash when `MOCK` is active.
+
+### Phase 14 voice input storage and validation
+
+- Accepted MIME types:
+  - `audio/webm`
+  - `audio/mpeg`
+  - `audio/wav`
+  - `audio/mp4`
+- Max size is 10MB.
+- Max browser-reported duration is 60 seconds.
+- Browser recording auto-stops at 60 seconds; server validation still enforces the limit.
+- Stored voice input audio is associated with workspace, avatar, conversation, and the intended visitor message id.
+- Raw voice input audio uses the authenticated dashboard avatar asset preview route and is not exposed publicly.
+- `.data/` is already ignored by git.
+- Local retention is currently tied to stored avatar asset rows; no automatic purge job exists in Phase 14.
+
+### Phase 14 runtime input behavior
+
+- Text input continues to use the existing text runtime path.
+- Audio input flow:
+  - browser records push-to-talk audio
+  - server validates and stores the raw recording as `VOICE_INPUT_AUDIO`
+  - TypeScript sends `inputType: "audio"` and `audioInput` to Python
+  - Python STT transcribes the audio
+  - transcript becomes the visitor message content
+  - existing answer generation, safety, lead capture decision, and output mode pipeline runs
+  - output mode remains `text`, `audio`, or `video`
+- No streaming or partial transcript events were added.
+
+### Phase 14 message persistence
+
+- Successful voice input visitor messages store:
+  - transcript text in `Message.content`
+  - private voice input URL/reference in `Message.audioUrl`
+  - `metadata.inputType = "audio"`
+  - STT language, confidence, duration, and provider metadata when available
+  - STT usage metadata for future metering; no billing enforcement is added in Phase 14
+- If transcription fails:
+  - no empty visitor message is saved
+  - UI shows a transcription error
+  - text input remains usable
+  - runtime trace records `stt.failed`
+
+### Phase 14 widget status
+
+Widget voice input is intentionally deferred.
+
+Reason: the current public widget message route is a JSON text flow with public media token handling for avatar responses. Adding visitor microphone upload cleanly requires a public multipart audio boundary, public abuse hardening for voice upload, and explicit public voice-input retention rules. Phase 14 keeps public widget text/audio/video responses and lead capture unchanged.
+
+### Phase 14 fallback behavior
+
+- Denied microphone permission shows a clear error and leaves text input enabled.
+- Unsupported `MediaRecorder` hides/disables voice recording and leaves text input enabled.
+- Empty recordings are rejected before upload.
+- Oversized, unsupported MIME type, or over-duration recordings are rejected server-side.
+- STT provider failures show transcription failure and do not create an empty visitor message.
+- If STT succeeds but answer generation fails, the transcript is persisted and the existing safe runtime fallback/error behavior applies.
+
+### Phase 14 intentionally does not include
+
+- realtime streaming
+- continuous listening
+- live partial transcripts
+- interruption or barge-in handling
+- WebRTC avatar sessions
+- full voice/video call UX
+- billing UI
+- billing enforcement
+- React SDK
+- self-hosted avatar engine
+- voice cloning
+- custom voice upload
+- advanced noise cancellation
+- speaker identification
+- widget microphone input
+
+### Manual verification paths for Phase 14
+
+1. Text input still works  
+   Path: use Preview text input  
+   Expected: existing text runtime still works.
+
+2. Microphone permission denied  
+   Path: deny browser mic permission  
+   Expected: clear error appears and text input remains usable.
+
+3. Record voice question  
+   Path: click mic, record short question, stop  
+   Expected: audio uploads/transcribes and transcript appears.
+
+4. Voice question answer  
+   Path: record a short voice question in Preview  
+   Expected: transcript becomes visitor message and avatar responds through existing runtime.
+
+5. Unsupported browser fallback  
+   Path: simulate browser without `MediaRecorder` if practical  
+   Expected: UI disables mic and keeps text input.
+
+6. Oversized or long audio  
+   Path: upload/record above configured limit if manually possible  
+   Expected: request is rejected with clear error.
+
+7. STT provider fallback  
+   Path: use `AI_RUNTIME_STT_PROVIDER=MOCK`  
+   Expected: documented mock transcript behavior works without external keys.
+
+8. STT failure fallback  
+   Path: misconfigure STT provider manually, such as `AI_RUNTIME_STT_PROVIDER=OPENAI_WHISPER` without a valid key  
+   Expected: transcription error appears, conversation does not crash, and no empty visitor message is saved.
+
+9. Conversation detail transcript  
+   Path: open conversation detail after voice input  
+   Expected: visitor message shows transcript, voice input audio, and input type/STT metadata where displayed.
+
+10. Runtime traces  
+    Path: inspect trace section  
+    Expected: `stt.started` and `stt.completed` appear on success, or `stt.failed` appears on failure; `audio_input.stored` or `audio_input.failed` appears where applicable.
+
+11. Widget voice input status  
+    Path: inspect widget after Phase 14  
+    Expected: no widget mic button exists; widget voice input is documented as intentionally deferred.
+
+12. Non-goal protection  
+    Path: inspect UI after Phase 14  
+    Expected: no realtime streaming, continuous listening, barge-in, billing, React SDK, full call UX, or self-hosted avatar engine exists.
+
+### Commands to run manually after Phase 14
+
+- `pnpm install`
+- Install/update Python runtime dependencies from `pyproject.toml` in your chosen environment
+- `cp .env.example .env`
+- Set `AI_RUNTIME_PROVIDER=MOCK`
+- Set `AI_RUNTIME_TTS_PROVIDER=MOCK`
+- Set `AI_RUNTIME_STT_PROVIDER=MOCK`
+- Optional: set `AI_RUNTIME_MOCK_STT_TRANSCRIPT="What services do you offer?"`
+- `pnpm docker:up`
+- `pnpm db:generate`
+- `pnpm db:migrate`
+- `pnpm db:seed`
+- `pnpm dev:web`
+- `pnpm dev:api`
+- `pnpm dev:ai-runtime`
+
+Manual approval is pending until these checks are run by the project owner.
+
 ## Phase 3 - Avatar Photo Upload and Validation
 
 ### Implemented this phase

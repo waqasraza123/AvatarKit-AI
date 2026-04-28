@@ -21,6 +21,8 @@ import {
   buildAvatarPhotoStorageKey,
   buildAvatarAudioDisplayUrl,
   buildAvatarAudioStorageKey,
+  buildAvatarVoiceInputDisplayUrl,
+  buildAvatarVoiceInputStorageKey,
   buildAvatarVideoDisplayUrl,
   buildAvatarVideoStorageKey,
   deleteAvatarAssetFromDisk,
@@ -55,8 +57,15 @@ import {
   getAvatarPhotoFileMetadata,
   validateAvatarPhotoFile
 } from "@/lib/avatar-photo-validation"
-import { fetchRelevantKnowledgeChunksForPreview } from "@/lib/avatar-runtime-retrieval"
+import {
+  fetchReadyKnowledgeChunksForRuntime,
+  fetchRelevantKnowledgeChunksForPreview
+} from "@/lib/avatar-runtime-retrieval"
 import { sendRuntimeTextMessage, type RuntimeResponse } from "@/lib/avatar-runtime-client"
+import {
+  parseVoiceInputDurationSeconds,
+  validateAvatarVoiceInputFile
+} from "@/lib/avatar-audio-input"
 import {
   AVATAR_CONSENT_TERMS_VERSION,
   hasAvatarConsentFieldErrors,
@@ -110,6 +119,7 @@ type AvatarPreviewActionState = {
     avatarId?: string
     inputText?: string
     outputMode?: string
+    audioFile?: string
   }
   conversation?: AvatarPreviewConversation
 }
@@ -216,6 +226,28 @@ function parsePreviewInput(formData: FormData): {
     conversationId: normalizeField(formData, "conversationId"),
     inputText: normalizeField(formData, "inputText"),
     outputMode: normalizedOutputMode
+  }
+}
+
+function parsePreviewVoiceInput(formData: FormData): {
+  avatarId: string
+  conversationId: string
+  outputMode: "text" | "audio" | "video"
+  audioFile: File | null
+  durationSeconds: number | null
+} {
+  const outputMode = normalizeField(formData, "outputMode")
+  const normalizedOutputMode = outputMode === "audio" || outputMode === "video"
+    ? outputMode
+    : "text"
+  const audioFile = formData.get("audioFile")
+
+  return {
+    avatarId: normalizeField(formData, "avatarId"),
+    conversationId: normalizeField(formData, "conversationId"),
+    outputMode: normalizedOutputMode,
+    audioFile: audioFile instanceof File ? audioFile : null,
+    durationSeconds: parseVoiceInputDurationSeconds(formData.get("durationSeconds"))
   }
 }
 
@@ -1901,6 +1933,877 @@ export async function sendAvatarPreviewMessageAction(
           : outputMode === "audio"
             ? "Avatar text and audio response generated."
             : "Avatar response generated."
+
+  return {
+    status: runtimeResponse.status === "error" ? "error" : "success",
+    message: responseMessage,
+    conversation
+  }
+}
+
+export async function sendAvatarPreviewVoiceMessageAction(
+  _state: AvatarPreviewActionState,
+  formData: FormData
+): Promise<AvatarPreviewActionState> {
+  const context = await getWorkspaceContextForRequest({ nextPath: "/dashboard/avatars" })
+  if (!context) {
+    return previewValidationError("Authentication is required.")
+  }
+
+  if (!canSendPreviewMessage(context.workspaceMembership.role)) {
+    return previewValidationError("Viewer roles cannot send preview messages.")
+  }
+
+  const { avatarId, conversationId, outputMode, audioFile, durationSeconds } = parsePreviewVoiceInput(formData)
+  if (!avatarId) {
+    return previewValidationError("Missing avatar reference.", { avatarId: "Missing avatar reference." })
+  }
+
+  if (!audioFile) {
+    return previewValidationError("Record a voice question before sending.", {
+      audioFile: "No recording was received."
+    })
+  }
+
+  const audioValidation = validateAvatarVoiceInputFile(audioFile, durationSeconds)
+  if (!audioValidation.ok || !audioValidation.mimeType) {
+    const message = audioValidation.validationIssues[0] ?? "Recording is not accepted."
+    return previewValidationError(message, { audioFile: message })
+  }
+
+  let rawAudioBytes: Buffer
+  try {
+    rawAudioBytes = Buffer.from(await audioFile.arrayBuffer())
+  } catch {
+    return previewValidationError("Recording could not be read. Please try again.", {
+      audioFile: "Recording could not be read."
+    })
+  }
+
+  const [avatar, knowledgeSummary, existingConversation] = await Promise.all([
+    prisma.avatar.findFirst({
+      where: {
+        id: avatarId,
+        workspaceId: context.workspace.id
+      },
+      select: {
+        id: true,
+        name: true,
+        displayName: true,
+        role: true,
+        useCase: true,
+        language: true,
+        greeting: true,
+        tone: true,
+        answerStyle: true,
+        businessInstructions: true,
+        fallbackMessage: true,
+        leadCapturePreference: true,
+        handoffPreference: true,
+        status: true,
+        voice: {
+          select: {
+            id: true,
+            provider: true,
+            providerVoiceId: true,
+            name: true,
+            language: true,
+            style: true,
+            presentationStyle: true,
+            status: true
+          }
+        },
+        photoAssets: {
+          where: {
+            type: AvatarAssetType.SOURCE_PHOTO,
+            validationStatus: AvatarAssetValidationStatus.VALID
+          },
+          orderBy: { updatedAt: "desc" },
+          take: 1,
+          select: {
+            id: true,
+            displayUrl: true,
+            mimeType: true,
+            width: true,
+            height: true
+          }
+        },
+        consentRecords: {
+          orderBy: { acceptedAt: "desc" },
+          take: 5,
+          select: {
+            avatarAssetId: true
+          }
+        }
+      }
+    }),
+    fetchKnowledgeSummaryForWorkspace(context.workspace.id),
+    conversationId
+      ? prisma.conversation.findFirst({
+        where: {
+          id: conversationId,
+          workspaceId: context.workspace.id,
+          avatarId,
+          channel: ConversationChannel.DASHBOARD_PREVIEW,
+          status: ConversationStatus.ACTIVE
+        },
+        select: { id: true }
+      })
+      : Promise.resolve(null)
+  ])
+
+  if (!avatar) {
+    return previewValidationError("Avatar does not exist in this workspace.")
+  }
+
+  if (avatar.status === AvatarStatus.SUSPENDED) {
+    return previewValidationError("Suspended avatars cannot be previewed.")
+  }
+
+  const currentSourcePhoto = avatar.photoAssets[0] ?? null
+  const hasCurrentSourcePhotoConsent = Boolean(
+    currentSourcePhoto &&
+    avatar.consentRecords.some(record => record.avatarAssetId === currentSourcePhoto.id)
+  )
+
+  if (outputMode === "audio" || outputMode === "video") {
+    if (!avatar.voice) {
+      return previewValidationError(outputMode === "video"
+        ? "Select a voice before requesting Text + avatar video preview."
+        : "Select a voice before requesting Text + audio preview.", {
+        outputMode: "Go to the Voice step and choose an active voice."
+      })
+    }
+
+    if (avatar.voice.status !== "ACTIVE") {
+      return previewValidationError(outputMode === "video"
+        ? "The selected voice is inactive. Choose an active voice before video preview."
+        : "The selected voice is inactive. Choose an active voice before audio preview.", {
+        outputMode: "Choose an active voice in the Voice step."
+      })
+    }
+
+    if (!isVoiceLanguageCompatible(avatar.language, avatar.voice.language)) {
+      return previewValidationError(outputMode === "video"
+        ? "The selected voice is not compatible with this avatar language for video preview."
+        : "The selected voice is not compatible with this avatar language.", {
+        outputMode: "Choose a compatible active voice in the Voice step."
+      })
+    }
+  }
+
+  if (outputMode === "video") {
+    if (!currentSourcePhoto) {
+      return previewValidationError("Upload an avatar photo before generating video.", {
+        outputMode: "Go to the Photo step and upload a valid source photo."
+      })
+    }
+
+    if (!hasCurrentSourcePhotoConsent) {
+      return previewValidationError("Accept avatar identity consent before generating video.", {
+        outputMode: "Go to the Consent step and accept consent for the current photo."
+      })
+    }
+  }
+
+  if (
+    ![
+      avatar.name,
+      avatar.displayName,
+      avatar.role,
+      avatar.useCase,
+      avatar.language,
+      avatar.greeting,
+      avatar.tone,
+      avatar.answerStyle,
+      avatar.businessInstructions,
+      avatar.fallbackMessage
+    ].every(Boolean) ||
+    knowledgeSummary.readySourceCount <= 0
+  ) {
+    return previewValidationError(
+      "Complete basics, behavior, and at least one READY knowledge source before preview."
+    )
+  }
+
+  const activeConversation = existingConversation ?? await prisma.conversation.findFirst({
+    where: {
+      workspaceId: context.workspace.id,
+      avatarId,
+      channel: ConversationChannel.DASHBOARD_PREVIEW,
+      status: ConversationStatus.ACTIVE
+    },
+    select: { id: true }
+  })
+
+  const targetConversation = activeConversation
+    ? activeConversation
+    : await prisma.conversation.create({
+      data: {
+        workspaceId: context.workspace.id,
+        avatarId,
+        channel: ConversationChannel.DASHBOARD_PREVIEW,
+        status: ConversationStatus.ACTIVE
+      }
+    })
+
+  const visitorMessageId = randomUUID()
+  const audioAssetId = randomUUID()
+  const storageKey = buildAvatarVoiceInputStorageKey({
+    workspaceId: context.workspace.id,
+    avatarId,
+    conversationId: targetConversation.id,
+    messageId: visitorMessageId,
+    assetId: audioAssetId,
+    fileExtension: audioValidation.fileExtension
+  })
+  const audioInputUrl = buildAvatarVoiceInputDisplayUrl(audioAssetId)
+
+  try {
+    await writeAvatarAssetToDisk({ storageKey, content: rawAudioBytes })
+    await prisma.avatarAsset.create({
+      data: {
+        id: audioAssetId,
+        workspaceId: context.workspace.id,
+        avatarId,
+        type: AvatarAssetType.VOICE_INPUT_AUDIO,
+        storageKey,
+        displayUrl: audioInputUrl,
+        originalFileName: audioFile.name || `voice-input-${visitorMessageId}.${audioValidation.fileExtension}`,
+        mimeType: audioValidation.mimeType,
+        sizeBytes: rawAudioBytes.byteLength,
+        width: 0,
+        height: 0,
+        validationStatus: AvatarAssetValidationStatus.VALID,
+        validationIssues: []
+      }
+    })
+    await createRuntimeTrace({
+      workspaceId: context.workspace.id,
+      avatarId,
+      conversationId: targetConversation.id,
+      eventType: "audio_input.stored",
+      status: RuntimeTraceStatus.SUCCESS,
+      metadata: {
+        assetId: audioAssetId,
+        mimeType: audioValidation.mimeType,
+        sizeBytes: rawAudioBytes.byteLength,
+        durationSeconds: audioValidation.durationSeconds
+      }
+    })
+  } catch {
+    await deleteAvatarAssetFromDisk(storageKey).catch(() => undefined)
+    await createRuntimeTrace({
+      workspaceId: context.workspace.id,
+      avatarId,
+      conversationId: targetConversation.id,
+      eventType: "audio_input.failed",
+      status: RuntimeTraceStatus.FAILURE,
+      metadata: {
+        reason: "storage_failed"
+      }
+    })
+    return previewValidationError("Voice recording could not be stored. Please try again.", {
+      audioFile: "Voice recording could not be stored."
+    })
+  }
+
+  const existingVisitorMessageCount = await prisma.message.count({
+    where: {
+      conversationId: targetConversation.id,
+      role: MessageRole.VISITOR
+    }
+  })
+
+  await createRuntimeTrace({
+    workspaceId: context.workspace.id,
+    avatarId,
+    conversationId: targetConversation.id,
+    eventType: "stt.started",
+    status: RuntimeTraceStatus.STARTED,
+    metadata: {
+      audioInputAssetId: audioAssetId,
+      mimeType: audioValidation.mimeType,
+      durationSeconds: audioValidation.durationSeconds
+    }
+  })
+
+  await createRuntimeTrace({
+    workspaceId: context.workspace.id,
+    avatarId,
+    conversationId: targetConversation.id,
+    eventType: "retrieval.started",
+    status: RuntimeTraceStatus.STARTED
+  })
+
+  const knowledgeChunks = await fetchReadyKnowledgeChunksForRuntime({
+    workspaceId: context.workspace.id
+  })
+
+  await createRuntimeTrace({
+    workspaceId: context.workspace.id,
+    avatarId,
+    conversationId: targetConversation.id,
+    eventType: "retrieval.completed",
+    status: RuntimeTraceStatus.SUCCESS,
+    metadata: {
+      requestedChunkCount: knowledgeChunks.length,
+      inputType: "audio"
+    }
+  })
+
+  await createRuntimeTrace({
+    workspaceId: context.workspace.id,
+    avatarId,
+    conversationId: targetConversation.id,
+    eventType: "llm.started",
+    status: RuntimeTraceStatus.STARTED
+  })
+
+  if (outputMode === "video") {
+    await createRuntimeTrace({
+      workspaceId: context.workspace.id,
+      avatarId,
+      conversationId: targetConversation.id,
+      eventType: "avatar_video.started",
+      status: RuntimeTraceStatus.STARTED,
+      metadata: {
+        sourcePhotoAssetId: currentSourcePhoto?.id ?? null,
+        voiceId: avatar.voice?.id ?? null
+      }
+    })
+  }
+
+  let runtimeResponse: RuntimeResponse
+  try {
+    runtimeResponse = await sendRuntimeTextMessage({
+      workspaceId: context.workspace.id,
+      avatarId,
+      conversationId: targetConversation.id,
+      messageId: visitorMessageId,
+      channel: "DASHBOARD_PREVIEW",
+      inputType: "audio",
+      inputText: "",
+      audioInput: {
+        assetId: audioAssetId,
+        audioBase64: rawAudioBytes.toString("base64"),
+        mimeType: audioValidation.mimeType,
+        fileName: audioFile.name || `voice-input.${audioValidation.fileExtension}`,
+        sizeBytes: rawAudioBytes.byteLength,
+        durationSeconds: audioValidation.durationSeconds
+      },
+      outputMode,
+      visitorMessageCount: existingVisitorMessageCount + 1,
+      avatarConfig: {
+        avatarId: avatar.id,
+        greeting: avatar.greeting,
+        tone: avatar.tone,
+        answerStyle: avatar.answerStyle,
+        businessInstructions: avatar.businessInstructions,
+        fallbackMessage: avatar.fallbackMessage,
+        leadCapturePreference: avatar.leadCapturePreference,
+        handoffPreference: avatar.handoffPreference,
+        language: avatar.language
+      },
+      selectedVoiceMetadata: avatar.voice ? {
+        id: avatar.voice.id,
+        provider: avatar.voice.provider,
+        providerVoiceId: avatar.voice.providerVoiceId,
+        name: avatar.voice.name,
+        language: avatar.voice.language,
+        style: avatar.voice.style,
+        presentationStyle: avatar.voice.presentationStyle,
+        status: avatar.voice.status
+      } : null,
+      avatarPhotoReference: currentSourcePhoto ? {
+        assetId: currentSourcePhoto.id,
+        url: currentSourcePhoto.displayUrl,
+        mimeType: currentSourcePhoto.mimeType,
+        width: currentSourcePhoto.width,
+        height: currentSourcePhoto.height
+      } : null,
+      knowledgeChunks,
+      visitorLanguage: avatar.language
+    })
+  } catch {
+    runtimeResponse = {
+      conversationId: targetConversation.id,
+      messageId: visitorMessageId,
+      status: "error",
+      answer: "Runtime request failed. Please try again.",
+      leadCaptureDecision: "none",
+      leadCapture: {
+        required: false,
+        reason: null,
+        fields: [],
+        promptText: null
+      },
+      handoffDecision: "request",
+      usage: {
+        provider: "unknown"
+      },
+      sourceReferences: []
+    }
+  }
+
+  const transcript = runtimeResponse.transcription?.text?.trim() ?? ""
+  if (!transcript) {
+    await createRuntimeTrace({
+      workspaceId: context.workspace.id,
+      avatarId,
+      conversationId: targetConversation.id,
+      eventType: "stt.failed",
+      status: RuntimeTraceStatus.FAILURE,
+      metadata: {
+        audioInputAssetId: audioAssetId,
+        reason: runtimeResponse.answer || runtimeResponse.usage.reason || "transcription_failed",
+        provider: runtimeResponse.transcription?.provider ?? runtimeResponse.usage.provider ?? null
+      }
+    })
+    const conversation = await fetchDashboardPreviewConversation(context.workspace.id, avatar.id)
+    return previewValidationError("Voice transcription failed. Text input is still available.", {
+      audioFile: runtimeResponse.answer || "Voice transcription failed."
+    }, conversation ?? undefined)
+  }
+
+  if (transcript.length < PREVIEW_MESSAGE_MIN_LENGTH) {
+    await createRuntimeTrace({
+      workspaceId: context.workspace.id,
+      avatarId,
+      conversationId: targetConversation.id,
+      eventType: "stt.failed",
+      status: RuntimeTraceStatus.FAILURE,
+      metadata: {
+        audioInputAssetId: audioAssetId,
+        reason: "transcript_too_short"
+      }
+    })
+    return previewValidationError("Voice transcription was too short. Please try again or type your question.", {
+      audioFile: "Transcript was too short."
+    })
+  }
+
+  if (!isTextLengthSafe(transcript, PREVIEW_MESSAGE_MAX_LENGTH)) {
+    await createRuntimeTrace({
+      workspaceId: context.workspace.id,
+      avatarId,
+      conversationId: targetConversation.id,
+      eventType: "stt.failed",
+      status: RuntimeTraceStatus.FAILURE,
+      metadata: {
+        audioInputAssetId: audioAssetId,
+        reason: "transcript_too_long"
+      }
+    })
+    return previewValidationError(`Transcript must be ${PREVIEW_MESSAGE_MAX_LENGTH} characters or fewer.`, {
+      audioFile: `Transcript must be ${PREVIEW_MESSAGE_MAX_LENGTH} characters or fewer.`
+    })
+  }
+
+  await createRuntimeTrace({
+    workspaceId: context.workspace.id,
+    avatarId,
+    conversationId: targetConversation.id,
+    eventType: "stt.completed",
+    status: RuntimeTraceStatus.SUCCESS,
+    metadata: {
+      audioInputAssetId: audioAssetId,
+      language: runtimeResponse.transcription?.language ?? null,
+      confidence: runtimeResponse.transcription?.confidence ?? null,
+      durationSeconds: runtimeResponse.transcription?.durationSeconds ?? audioValidation.durationSeconds,
+      provider: runtimeResponse.transcription?.provider ?? null
+    }
+  })
+
+  await createRuntimeTrace({
+    workspaceId: context.workspace.id,
+    avatarId,
+    conversationId: targetConversation.id,
+    eventType: "message.received",
+    status: RuntimeTraceStatus.STARTED
+  })
+
+  await prisma.message.create({
+    data: {
+      conversationId: targetConversation.id,
+      id: visitorMessageId,
+      role: MessageRole.VISITOR,
+      content: transcript,
+      audioUrl: audioInputUrl,
+      metadata: {
+        inputType: "audio",
+        audioInputAssetId: audioAssetId,
+        audioMimeType: audioValidation.mimeType,
+        audioSizeBytes: rawAudioBytes.byteLength,
+        audioDurationSeconds: audioValidation.durationSeconds,
+        sttLanguage: runtimeResponse.transcription?.language ?? null,
+        sttConfidence: runtimeResponse.transcription?.confidence ?? null,
+        sttDurationSeconds: runtimeResponse.transcription?.durationSeconds ?? audioValidation.durationSeconds,
+        sttUsage: runtimeResponse.transcription?.usage ?? null,
+        sttProvider: runtimeResponse.transcription?.provider ?? null
+      }
+    }
+  })
+
+  await prisma.conversation.update({
+    where: { id: targetConversation.id },
+    data: { updatedAt: new Date() }
+  })
+
+  await createRuntimeTrace({
+    workspaceId: context.workspace.id,
+    avatarId,
+    conversationId: targetConversation.id,
+    eventType: "message.received",
+    status: RuntimeTraceStatus.SUCCESS
+  })
+
+  await createRuntimeTrace({
+    workspaceId: context.workspace.id,
+    avatarId,
+    conversationId: targetConversation.id,
+    eventType: "llm.completed",
+    status: runtimeResponse.status === "error" ? RuntimeTraceStatus.FAILURE : RuntimeTraceStatus.SUCCESS,
+    metadata: {
+      provider: runtimeResponse.usage.provider,
+      status: runtimeResponse.status
+    }
+  })
+
+  if (runtimeResponse.status === "error") {
+    await createRuntimeTrace({
+      workspaceId: context.workspace.id,
+      avatarId,
+      conversationId: targetConversation.id,
+      eventType: "runtime.failed",
+      status: RuntimeTraceStatus.FAILURE,
+      metadata: {
+        status: runtimeResponse.status,
+        provider: runtimeResponse.usage.provider,
+        reason: runtimeResponse.safetyReason ?? runtimeResponse.usage.reason
+      }
+    })
+  }
+
+  await createRuntimeTrace({
+    workspaceId: context.workspace.id,
+    avatarId,
+    conversationId: targetConversation.id,
+    eventType: "safety.checked",
+    status: RuntimeTraceStatus.SUCCESS,
+    metadata: {
+      handoffDecision: runtimeResponse.handoffDecision,
+      leadCaptureDecision: runtimeResponse.leadCaptureDecision
+    }
+  })
+
+  const avatarMessageId = randomUUID()
+  let audioUrl: string | null = null
+  let audioErrorMessage: string | null = runtimeResponse.audioError?.message ?? null
+  let audioUsage: Record<string, unknown> | null = runtimeResponse.audio?.usage ?? null
+  let videoUrl: string | null = null
+  let videoErrorMessage: string | null = runtimeResponse.videoError?.message ?? null
+  let videoUsage: Record<string, unknown> | null = runtimeResponse.video?.usage ?? null
+  let videoDurationSeconds: number | null = typeof runtimeResponse.video?.durationSeconds === "number"
+    ? runtimeResponse.video.durationSeconds
+    : null
+  let videoProviderJobId: string | null = runtimeResponse.video?.providerJobId ?? null
+
+  if (outputMode === "audio" || outputMode === "video") {
+    await createRuntimeTrace({
+      workspaceId: context.workspace.id,
+      avatarId,
+      conversationId: targetConversation.id,
+      eventType: "tts.started",
+      status: RuntimeTraceStatus.STARTED,
+      metadata: {
+        voiceId: avatar.voice?.id ?? null
+      }
+    })
+
+    if (runtimeResponse.audio) {
+      await createRuntimeTrace({
+        workspaceId: context.workspace.id,
+        avatarId,
+        conversationId: targetConversation.id,
+        eventType: "tts.completed",
+        status: RuntimeTraceStatus.SUCCESS,
+        metadata: {
+          provider: runtimeResponse.audio.provider,
+          mimeType: runtimeResponse.audio.mimeType,
+          characters: runtimeResponse.audio.usage.characters ?? runtimeResponse.answer.length
+        }
+      })
+
+      const outputAudioAssetId = randomUUID()
+      const fileExtension = runtimeResponse.audio.fileExtension || "bin"
+      const outputAudioStorageKey = buildAvatarAudioStorageKey({
+        workspaceId: context.workspace.id,
+        avatarId,
+        conversationId: targetConversation.id,
+        messageId: avatarMessageId,
+        assetId: outputAudioAssetId,
+        fileExtension
+      })
+
+      try {
+        const audioBytes = Buffer.from(runtimeResponse.audio.audioBase64, "base64")
+        await writeAvatarAssetToDisk({ storageKey: outputAudioStorageKey, content: audioBytes })
+        audioUrl = buildAvatarAudioDisplayUrl(outputAudioAssetId)
+        await prisma.avatarAsset.create({
+          data: {
+            id: outputAudioAssetId,
+            workspaceId: context.workspace.id,
+            avatarId,
+            type: AvatarAssetType.GENERATED_SPEECH_AUDIO,
+            storageKey: outputAudioStorageKey,
+            displayUrl: audioUrl,
+            originalFileName: `avatar-response-${avatarMessageId}.${fileExtension}`,
+            mimeType: runtimeResponse.audio.mimeType,
+            sizeBytes: audioBytes.byteLength,
+            width: 0,
+            height: 0,
+            validationStatus: AvatarAssetValidationStatus.VALID,
+            validationIssues: []
+          }
+        })
+        await createRuntimeTrace({
+          workspaceId: context.workspace.id,
+          avatarId,
+          conversationId: targetConversation.id,
+          eventType: "audio.stored",
+          status: RuntimeTraceStatus.SUCCESS,
+          metadata: {
+            assetId: outputAudioAssetId,
+            mimeType: runtimeResponse.audio.mimeType,
+            sizeBytes: audioBytes.byteLength
+          }
+        })
+      } catch {
+        audioErrorMessage = "Audio was generated but could not be stored."
+        audioUrl = null
+        await deleteAvatarAssetFromDisk(outputAudioStorageKey).catch(() => undefined)
+        await createRuntimeTrace({
+          workspaceId: context.workspace.id,
+          avatarId,
+          conversationId: targetConversation.id,
+          eventType: "audio.failed",
+          status: RuntimeTraceStatus.FAILURE,
+          metadata: {
+            reason: "storage_failed"
+          }
+        })
+      }
+    } else {
+      await createRuntimeTrace({
+        workspaceId: context.workspace.id,
+        avatarId,
+        conversationId: targetConversation.id,
+        eventType: "tts.failed",
+        status: RuntimeTraceStatus.FAILURE,
+        metadata: {
+          reason: runtimeResponse.audioError?.code ?? "missing_audio",
+          message: runtimeResponse.audioError?.message ?? "TTS provider did not return audio.",
+          provider: runtimeResponse.audioError?.provider ?? null
+        }
+      })
+    }
+  }
+
+  if (outputMode === "video") {
+    if (runtimeResponse.video && runtimeResponse.video.status === "completed") {
+      await createRuntimeTrace({
+        workspaceId: context.workspace.id,
+        avatarId,
+        conversationId: targetConversation.id,
+        eventType: "avatar_video.completed",
+        status: RuntimeTraceStatus.SUCCESS,
+        metadata: {
+          provider: runtimeResponse.video.provider,
+          providerJobId: runtimeResponse.video.providerJobId ?? null,
+          durationSeconds: runtimeResponse.video.durationSeconds ?? null
+        }
+      })
+
+      if (runtimeResponse.video.videoBase64) {
+        const videoAssetId = randomUUID()
+        const videoMimeType = runtimeResponse.video.mimeType || "video/mp4"
+        const fileExtension = runtimeResponse.video.fileExtension ||
+          (videoMimeType.includes("webm") ? "webm" : videoMimeType.includes("quicktime") ? "mov" : "mp4")
+        const videoStorageKey = buildAvatarVideoStorageKey({
+          workspaceId: context.workspace.id,
+          avatarId,
+          conversationId: targetConversation.id,
+          messageId: avatarMessageId,
+          assetId: videoAssetId,
+          fileExtension
+        })
+
+        try {
+          const videoBytes = Buffer.from(runtimeResponse.video.videoBase64, "base64")
+          await writeAvatarAssetToDisk({ storageKey: videoStorageKey, content: videoBytes })
+          videoUrl = buildAvatarVideoDisplayUrl(videoAssetId)
+          await prisma.avatarAsset.create({
+            data: {
+              id: videoAssetId,
+              workspaceId: context.workspace.id,
+              avatarId,
+              type: AvatarAssetType.GENERATED_AVATAR_VIDEO,
+              storageKey: videoStorageKey,
+              displayUrl: videoUrl,
+              originalFileName: `avatar-response-${avatarMessageId}.${fileExtension}`,
+              mimeType: videoMimeType,
+              sizeBytes: videoBytes.byteLength,
+              width: 0,
+              height: 0,
+              validationStatus: AvatarAssetValidationStatus.VALID,
+              validationIssues: []
+            }
+          })
+          await createRuntimeTrace({
+            workspaceId: context.workspace.id,
+            avatarId,
+            conversationId: targetConversation.id,
+            eventType: "video.stored",
+            status: RuntimeTraceStatus.SUCCESS,
+            metadata: {
+              assetId: videoAssetId,
+              mimeType: videoMimeType,
+              sizeBytes: videoBytes.byteLength,
+              storage: "avatar_asset"
+            }
+          })
+        } catch {
+          videoErrorMessage = "Video was generated but could not be stored."
+          videoUrl = null
+          await deleteAvatarAssetFromDisk(videoStorageKey).catch(() => undefined)
+          await createRuntimeTrace({
+            workspaceId: context.workspace.id,
+            avatarId,
+            conversationId: targetConversation.id,
+            eventType: "video.failed",
+            status: RuntimeTraceStatus.FAILURE,
+            metadata: {
+              reason: "storage_failed"
+            }
+          })
+        }
+      } else if (runtimeResponse.video.videoUrl) {
+        videoUrl = runtimeResponse.video.videoUrl
+        await createRuntimeTrace({
+          workspaceId: context.workspace.id,
+          avatarId,
+          conversationId: targetConversation.id,
+          eventType: "video.stored",
+          status: RuntimeTraceStatus.SUCCESS,
+          metadata: {
+            provider: runtimeResponse.video.provider,
+            providerJobId: runtimeResponse.video.providerJobId ?? null,
+            storage: "provider_hosted_reference"
+          }
+        })
+      } else {
+        videoErrorMessage = "Video generation completed without a playable video URL."
+      }
+    } else {
+      videoErrorMessage = runtimeResponse.videoError?.message ??
+        (runtimeResponse.video?.status === "processing"
+          ? "Video generation is still processing. Phase 10 preview does not include polling for this provider yet."
+          : "Avatar video provider did not return a completed video.")
+      await createRuntimeTrace({
+        workspaceId: context.workspace.id,
+        avatarId,
+        conversationId: targetConversation.id,
+        eventType: "avatar_video.failed",
+        status: RuntimeTraceStatus.FAILURE,
+        metadata: {
+          reason: runtimeResponse.videoError?.code ?? runtimeResponse.video?.status ?? "missing_video",
+          message: videoErrorMessage,
+          provider: runtimeResponse.videoError?.provider ?? runtimeResponse.video?.provider ?? null,
+          providerJobId: runtimeResponse.video?.providerJobId ?? null
+        }
+      })
+    }
+  }
+
+  await prisma.message.create({
+    data: {
+      id: avatarMessageId,
+      conversationId: targetConversation.id,
+      role: MessageRole.AVATAR,
+      content: runtimeResponse.answer || "",
+      audioUrl,
+      videoUrl,
+      metadata: {
+        runtimeStatus: runtimeResponse.status,
+        usage: runtimeResponse.usage,
+        outputMode,
+        audioStatus: outputMode === "audio" || outputMode === "video"
+          ? audioUrl
+            ? "generated"
+            : "failed"
+          : "none",
+        audioError: audioErrorMessage,
+        ttsUsage: audioUsage,
+        videoStatus: outputMode === "video"
+          ? videoUrl
+            ? "generated"
+            : "failed"
+          : "none",
+        videoError: videoErrorMessage,
+        videoUsage,
+        videoDurationSeconds,
+        videoProviderJobId,
+        intent: runtimeResponse.intent ?? null,
+        confidence: runtimeResponse.confidence ?? null,
+        handoffDecision: runtimeResponse.handoffDecision,
+        leadCaptureDecision: runtimeResponse.leadCaptureDecision,
+        leadCapture: runtimeResponse.leadCapture,
+        safetyReason: runtimeResponse.safetyReason ?? null,
+        sourceReferenceCount: runtimeResponse.sourceReferences.length
+      }
+    }
+  })
+
+  await prisma.conversation.update({
+    where: { id: targetConversation.id },
+    data: { updatedAt: new Date() }
+  })
+
+  await createRuntimeTrace({
+    workspaceId: context.workspace.id,
+    avatarId,
+    conversationId: targetConversation.id,
+    eventType: "response.saved",
+    status: RuntimeTraceStatus.SUCCESS
+  })
+
+  await createRuntimeTrace({
+    workspaceId: context.workspace.id,
+    avatarId,
+    conversationId: targetConversation.id,
+    eventType: "response.returned",
+    status: RuntimeTraceStatus.SUCCESS,
+    metadata: {
+      messageId: avatarMessageId
+    }
+  })
+
+  revalidatePath(`/dashboard/avatars/${avatar.id}/studio?step=preview`)
+  revalidatePath("/dashboard/avatars")
+
+  const conversation = await fetchDashboardPreviewConversation(context.workspace.id, avatar.id)
+  const responseMessage = videoErrorMessage
+    ? `Voice question transcribed. ${audioUrl ? "Audio fallback is available. " : ""}${videoErrorMessage}`
+    : audioErrorMessage
+      ? `Voice question transcribed. ${audioErrorMessage}`
+      : runtimeResponse.status === "error"
+        ? "Voice question transcribed, but the runtime returned a safe fallback error."
+        : outputMode === "video"
+          ? "Voice question transcribed, and avatar text, audio, and video response generated."
+          : outputMode === "audio"
+            ? "Voice question transcribed, and avatar text and audio response generated."
+            : "Voice question transcribed, and avatar response generated."
 
   return {
     status: runtimeResponse.status === "error" ? "error" : "success",

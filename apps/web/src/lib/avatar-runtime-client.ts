@@ -37,8 +37,9 @@ export type RuntimeRequest = {
   conversationId: string
   messageId: string
   channel: "DASHBOARD_PREVIEW" | "WIDGET" | "KIOSK" | "API"
-  inputType: "text"
+  inputType: "text" | "audio"
   inputText: string
+  audioInput?: RuntimeAudioInputReference | null
   outputMode: "text" | "audio" | "video"
   visitorMessageCount: number
   avatarConfig: RuntimeAvatarConfig
@@ -46,6 +47,15 @@ export type RuntimeRequest = {
   avatarPhotoReference?: RuntimeAvatarPhotoReference | null
   knowledgeChunks: RuntimeKnowledgeChunkForRuntime[]
   visitorLanguage?: string
+}
+
+export type RuntimeAudioInputReference = {
+  assetId: string
+  audioBase64: string
+  mimeType: string
+  fileName: string
+  sizeBytes: number
+  durationSeconds: number | null
 }
 
 export type RuntimeResponseSourceReference = {
@@ -98,6 +108,16 @@ export type RuntimeVideoError = {
   provider?: string | null
 }
 
+export type RuntimeTranscription = {
+  text: string
+  language?: string | null
+  confidence?: number | null
+  durationSeconds?: number | null
+  usage?: Record<string, unknown>
+  provider: string
+  model?: string | null
+}
+
 export type RuntimeLeadCapture = {
   required: boolean
   reason: string | null
@@ -122,6 +142,7 @@ export type RuntimeResponse = {
   audioError?: RuntimeAudioError | null
   video?: RuntimeVideoOutput | null
   videoError?: RuntimeVideoError | null
+  transcription?: RuntimeTranscription | null
 }
 
 export type RuntimeErrorResponse = {
@@ -285,7 +306,9 @@ export async function sendRuntimeTextMessage(
         status: "error",
         conversationId: request.conversationId,
         messageId: request.messageId,
-        answer: `Runtime request failed with status ${response.status}.`,
+        answer: typeof (payload as { detail?: unknown }).detail === "string"
+          ? String((payload as { detail: string }).detail)
+          : `Runtime request failed with status ${response.status}.`,
         leadCaptureDecision: "none",
         leadCapture: defaultLeadCapture(),
         handoffDecision: "request",
@@ -317,7 +340,8 @@ export async function sendRuntimeTextMessage(
       audio: typedPayload.audio ?? null,
       audioError: typedPayload.audioError ?? null,
       video: typedPayload.video ?? null,
-      videoError: typedPayload.videoError ?? null
+      videoError: typedPayload.videoError ?? null,
+      transcription: typedPayload.transcription ?? null
     }
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {

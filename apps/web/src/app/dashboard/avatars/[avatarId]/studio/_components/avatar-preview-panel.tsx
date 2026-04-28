@@ -1,10 +1,10 @@
 "use client"
 
 import { MessageRole } from "@prisma/client"
-import { useActionState, useMemo, useState } from "react"
+import { useActionState, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import type { AvatarPhotoAssetRecord, AvatarPreviewConversation, AvatarPreviewMessage } from "@/lib/avatar"
-import { sendAvatarPreviewMessageAction } from "@/app/actions/avatars"
+import { sendAvatarPreviewMessageAction, sendAvatarPreviewVoiceMessageAction } from "@/app/actions/avatars"
 
 type AvatarPreviewPanelProps = {
   avatarId: string
@@ -94,7 +94,7 @@ function PreviewTranscript({ messages }: { messages: AvatarPreviewMessage[] }) {
           <p>{message.content}</p>
           {message.audioUrl ? (
             <div className="preview-audio-card">
-              <span>Audio response</span>
+              <span>{message.role === MessageRole.VISITOR ? "Voice input" : "Audio response"}</span>
               <audio controls preload="metadata" src={message.audioUrl} />
             </div>
           ) : null}
@@ -132,21 +132,37 @@ export default function AvatarPreviewPanel({
     conversation: initialConversation
   } as PreviewState)
   const [outputMode, setOutputMode] = useState<PreviewOutputMode>("text")
+  const [voiceState, setVoiceState] = useState<PreviewState | null>(null)
+  const [recordingState, setRecordingState] = useState<"idle" | "recording" | "error">("idle")
+  const [recordingSeconds, setRecordingSeconds] = useState(0)
+  const [recordingError, setRecordingError] = useState("")
+  const [voiceTranscriptPreview, setVoiceTranscriptPreview] = useState("")
+  const [mediaRecorderSupported, setMediaRecorderSupported] = useState(false)
+  const [voicePending, setVoicePending] = useState(false)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const mediaStreamRef = useRef<MediaStream | null>(null)
+  const audioChunksRef = useRef<Blob[]>([])
+  const startedAtRef = useRef<number>(0)
+  const timerRef = useRef<number | null>(null)
 
-  const conversation = state.conversation ?? initialConversation
+  const conversation = voiceState?.conversation ?? state.conversation ?? initialConversation
   const isReady = previewReady
   const setupWarnings = missingRequirements
   const isVideoReady = Object.values(videoPreconditions).every(Boolean)
-  const statusClass = state.status === "error" ? "preview-state-error" : "preview-state-success"
+  const activeStatus = voiceState ?? state
+  const statusClass = activeStatus.status === "error" ? "preview-state-error" : "preview-state-success"
   const conversationReviewPath = conversation?.conversationId
     ? `/dashboard/conversations/${conversation.conversationId}`
     : `/dashboard/conversations?avatarId=${avatarId}&channel=DASHBOARD_PREVIEW`
 
-  const canSubmit = canSend && isReady && !pending && (outputMode !== "video" || isVideoReady)
-  const buttonText = pending
+  const canSubmit = canSend && isReady && !pending && !voicePending && (outputMode !== "video" || isVideoReady)
+  const canRecord = canSubmit && mediaRecorderSupported && recordingState !== "recording"
+  const buttonText = pending || voicePending
     ? outputMode === "video"
       ? "Generating video..."
-      : "Generating..."
+      : voicePending
+        ? "Transcribing..."
+        : "Generating..."
     : "Send preview question"
 
   const helperText = useMemo(() => {
@@ -187,6 +203,140 @@ export default function AvatarPreviewPanel({
       guidance: "Suspended avatars cannot generate preview video."
     }
   ]
+
+  useEffect(() => {
+    setMediaRecorderSupported(
+      typeof window !== "undefined" &&
+      typeof navigator !== "undefined" &&
+      Boolean(navigator.mediaDevices?.getUserMedia) &&
+      typeof MediaRecorder !== "undefined"
+    )
+
+    return () => {
+      if (timerRef.current !== null) {
+        window.clearInterval(timerRef.current)
+      }
+      mediaStreamRef.current?.getTracks().forEach(track => track.stop())
+    }
+  }, [])
+
+  function resolveRecordingMimeType(): string {
+    if (typeof MediaRecorder === "undefined") {
+      return ""
+    }
+    if (MediaRecorder.isTypeSupported("audio/webm")) {
+      return "audio/webm"
+    }
+    if (MediaRecorder.isTypeSupported("audio/mp4")) {
+      return "audio/mp4"
+    }
+    return ""
+  }
+
+  function stopRecordingTimer() {
+    if (timerRef.current !== null) {
+      window.clearInterval(timerRef.current)
+      timerRef.current = null
+    }
+  }
+
+  function stopRecordingTracks() {
+    mediaStreamRef.current?.getTracks().forEach(track => track.stop())
+    mediaStreamRef.current = null
+  }
+
+  async function submitVoiceRecording(blob: Blob, durationSeconds: number) {
+    setRecordingError("")
+    setVoiceTranscriptPreview("")
+    const formData = new FormData()
+    formData.set("avatarId", avatarId)
+    formData.set("outputMode", outputMode)
+    formData.set("durationSeconds", String(durationSeconds))
+    if (conversation?.conversationId) {
+      formData.set("conversationId", conversation.conversationId)
+    }
+    formData.set("audioFile", new File([blob], `avatar-preview-${Date.now()}.${blob.type.includes("mp4") ? "mp4" : "webm"}`, {
+      type: blob.type || "audio/webm"
+    }))
+
+    setVoicePending(true)
+    try {
+      const result = await sendAvatarPreviewVoiceMessageAction(initialState, formData)
+      setVoiceState(result)
+      const voiceMessage = result.conversation?.messages
+        .filter(message => message.role === MessageRole.VISITOR && message.metadata?.inputType === "audio")
+        .at(-1)
+      setVoiceTranscriptPreview(voiceMessage?.content ?? "")
+      if (result.status === "error") {
+        setRecordingError(result.message ?? "Voice input failed. Text input is still available.")
+      }
+    } finally {
+      setVoicePending(false)
+    }
+  }
+
+  async function startRecording() {
+    if (!canRecord || recordingState === "recording") {
+      return
+    }
+
+    setRecordingError("")
+    setVoiceTranscriptPreview("")
+    audioChunksRef.current = []
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mimeType = resolveRecordingMimeType()
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
+      mediaStreamRef.current = stream
+      mediaRecorderRef.current = recorder
+      startedAtRef.current = Date.now()
+      setRecordingSeconds(0)
+      setRecordingState("recording")
+
+      recorder.addEventListener("dataavailable", event => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data)
+        }
+      })
+
+      recorder.addEventListener("stop", () => {
+        stopRecordingTimer()
+        stopRecordingTracks()
+        setRecordingState("idle")
+        const durationSeconds = Math.max(0.1, (Date.now() - startedAtRef.current) / 1000)
+        const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || "audio/webm" })
+        if (blob.size <= 0) {
+          setRecordingError("Recording was empty. Try again or type your question.")
+          return
+        }
+        void submitVoiceRecording(blob, durationSeconds)
+      })
+
+      recorder.start()
+      timerRef.current = window.setInterval(() => {
+        const elapsedSeconds = Math.round((Date.now() - startedAtRef.current) / 1000)
+        setRecordingSeconds(elapsedSeconds)
+        if (elapsedSeconds >= 60 && recorder.state === "recording") {
+          recorder.stop()
+        }
+      }, 500)
+    } catch (error) {
+      stopRecordingTracks()
+      setRecordingState("error")
+      setRecordingError(error instanceof DOMException && error.name === "NotAllowedError"
+        ? "Microphone permission was denied. Text input is still available."
+        : "Microphone recording is not available. Text input is still available.")
+    }
+  }
+
+  function stopRecording() {
+    const recorder = mediaRecorderRef.current
+    if (!recorder || recorder.state !== "recording") {
+      return
+    }
+    recorder.stop()
+  }
 
   return (
     <section className="avatar-step-panel avatar-preview-panel">
@@ -236,9 +386,9 @@ export default function AvatarPreviewPanel({
         ) : null}
       </div>
         <p className="avatar-step-description">{helperText}</p>
-      {state.message ? (
+      {activeStatus.message ? (
         <p className={statusClass}>
-          {state.message}
+          {activeStatus.message}
         </p>
       ) : null}
       <Link className="avatarkit-link-button" href={conversationReviewPath}>
@@ -284,6 +434,37 @@ export default function AvatarPreviewPanel({
         <p className="form-helper">
           Selected voice is required for audio and video. Video also requires the current source photo and consent.
         </p>
+        <div className="preview-voice-input">
+          <div>
+            <span>Voice input</span>
+            <p>Push-to-talk recording transcribes your question before the avatar answers.</p>
+          </div>
+          <div className="preview-voice-actions">
+            {recordingState === "recording" ? (
+              <button className="avatarkit-button avatarkit-button-secondary" type="button" onClick={stopRecording}>
+                Stop recording
+              </button>
+            ) : (
+              <button className="avatarkit-button avatarkit-button-secondary" type="button" onClick={startRecording} disabled={!canRecord}>
+                {mediaRecorderSupported ? "Mic" : "Mic unavailable"}
+              </button>
+            )}
+            <span className={recordingState === "recording" ? "preview-recording-timer active" : "preview-recording-timer"}>
+              {recordingState === "recording" ? `Recording ${recordingSeconds}s` : voicePending ? "Transcribing..." : "Ready"}
+            </span>
+          </div>
+        </div>
+        {!mediaRecorderSupported ? (
+          <p className="form-helper">This browser does not support push-to-talk recording. Text input remains available.</p>
+        ) : null}
+        {recordingError ? <p className="preview-audio-error">{recordingError}</p> : null}
+        {voiceTranscriptPreview ? (
+          <div className="preview-transcript-preview">
+            <span>Transcript</span>
+            <p>{voiceTranscriptPreview}</p>
+          </div>
+        ) : null}
+        {voiceState?.fieldErrors?.audioFile ? <p className="form-error">{voiceState.fieldErrors.audioFile}</p> : null}
         {!selectedVoiceName && (outputMode === "audio" || outputMode === "video") ? (
           <p className="preview-audio-error">
             {outputMode === "video"

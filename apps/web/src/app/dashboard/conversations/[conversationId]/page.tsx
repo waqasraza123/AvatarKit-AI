@@ -49,6 +49,11 @@ function parseMetadataLines(metadata: Record<string, unknown> | null): string[] 
 
   const lines: string[] = []
   const provider = metadata.provider
+  const inputType = metadata.inputType
+  const audioDurationSeconds = metadata.audioDurationSeconds
+  const sttLanguage = metadata.sttLanguage
+  const sttConfidence = metadata.sttConfidence
+  const sttDurationSeconds = metadata.sttDurationSeconds
   const handoffDecision = metadata.handoffDecision
   const leadCaptureDecision = metadata.leadCaptureDecision
   const safetyReason = metadata.safetyReason
@@ -66,6 +71,26 @@ function parseMetadataLines(metadata: Record<string, unknown> | null): string[] 
 
   if (typeof provider === "string" && provider.trim()) {
     lines.push(`provider: ${provider}`)
+  }
+
+  if (typeof inputType === "string" && inputType.trim()) {
+    lines.push(`input: ${inputType}`)
+  }
+
+  if (typeof audioDurationSeconds === "number") {
+    lines.push(`input audio seconds: ${Math.round(audioDurationSeconds * 10) / 10}`)
+  }
+
+  if (typeof sttLanguage === "string" && sttLanguage.trim()) {
+    lines.push(`stt language: ${sttLanguage}`)
+  }
+
+  if (typeof sttConfidence === "number") {
+    lines.push(`stt confidence: ${Math.round(sttConfidence * 100)}%`)
+  }
+
+  if (typeof sttDurationSeconds === "number") {
+    lines.push(`stt seconds: ${Math.round(sttDurationSeconds * 10) / 10}`)
   }
 
   if (typeof runtimeStatus === "string" && runtimeStatus.trim()) {
@@ -374,7 +399,7 @@ export default async function ConversationDetailPage({
                   <p className="conversation-message-content">{message.content}</p>
                   {message.audioUrl ? (
                     <div className="conversation-audio-card">
-                      <span>Audio response</span>
+                      <span>{message.role === "VISITOR" ? "Voice input" : "Audio response"}</span>
                       <audio controls preload="metadata" src={message.audioUrl} />
                     </div>
                   ) : null}

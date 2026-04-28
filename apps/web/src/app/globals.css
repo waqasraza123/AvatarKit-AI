@@ -1222,6 +1222,65 @@ input[type="password"] {
   font-weight: 700;
 }
 
+.preview-voice-input {
+  align-items: center;
+  border: 1px solid rgba(53, 92, 255, 0.18);
+  border-radius: 10px;
+  background: #f8fbff;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 12px;
+}
+
+.preview-voice-input span,
+.preview-transcript-preview span {
+  color: var(--primary-strong);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.preview-voice-input p,
+.preview-transcript-preview p {
+  color: var(--muted);
+  margin: 4px 0 0;
+}
+
+.preview-voice-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.preview-recording-timer {
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+  padding: 7px 10px;
+}
+
+.preview-recording-timer.active {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.preview-transcript-preview {
+  border: 1px solid #a7f3d0;
+  border-radius: 10px;
+  background: #ecfdf3;
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+}
+
 .preview-transcript {
   margin-top: 8px;
   border: 1px solid var(--panel-border);
@@ -1791,5 +1850,14 @@ select {
   .embed-management-grid,
   .embed-avatar-media {
     grid-template-columns: 1fr;
+  }
+
+  .preview-voice-input {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .preview-voice-actions {
+    justify-content: flex-start;
   }
 }

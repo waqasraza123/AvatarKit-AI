@@ -1,5 +1,7 @@
 # AvatarKit AI
 
+![AvatarKit AI business avatar showcase](docs/assets/readme/avatar-showcase.png)
+
 [![CI](https://github.com/waqasraza123/AvatarKit-AI/actions/workflows/ci.yml/badge.svg)](https://github.com/waqasraza123/AvatarKit-AI/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Product: Business Avatars](https://img.shields.io/badge/Product-Business%20Avatars-355cff.svg)](#product-vision)

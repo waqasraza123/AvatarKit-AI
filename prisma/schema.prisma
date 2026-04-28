@@ -372,6 +372,7 @@ enum AvatarAssetType {
   PREVIEW_PHOTO
   GENERATED_SPEECH_AUDIO
   GENERATED_AVATAR_VIDEO
+  VOICE_INPUT_AUDIO
 }
 
 enum AvatarAssetValidationStatus {

@@ -126,6 +126,19 @@
   - widget UI may collect name, email, phone, and message after showing the avatar answer.
   - dashboard lead reads are available to workspace members, while status updates are restricted to `OWNER`, `ADMIN`, and `OPERATOR`.
 - Phase 13 must not add CRM integrations, email/SMS notifications, calendar booking, advanced lead scoring, billing UI/enforcement, microphone/STT input, realtime streaming, self-hosted avatar engine behavior, public API keys, webhooks, or operator live chat.
+- Phase 14 adds push-to-talk voice input v1:
+  - Python owns the STT provider abstraction under `services/ai-runtime`.
+  - STT providers are selected by `AI_RUNTIME_STT_PROVIDER` and are env-gated.
+  - `MOCK` STT must work without external credentials and returns the configured mock transcript.
+  - Dashboard Preview may record audio with `MediaRecorder`, store the raw recording as private `VOICE_INPUT_AUDIO`, send an internal audio payload/reference to Python, then persist the transcript as the visitor message.
+  - Voice input recordings must validate MIME type, size, and browser-reported duration before storage.
+  - Accepted MIME types are `audio/webm`, `audio/mpeg`, `audio/wav`, and `audio/mp4`.
+  - Phase 14 max voice input size is 10MB and max duration is 60 seconds.
+  - Raw voice input audio is private dashboard media served only through authenticated avatar asset preview routes.
+  - Transcription failure must not create an empty visitor message.
+  - Runtime traces include `stt.started`, `stt.completed`, `stt.failed`, `audio_input.stored`, and `audio_input.failed`.
+  - Widget voice input remains intentionally deferred until the public widget can support multipart audio upload and public voice-input media rules without weakening the current text/lead flow.
+- Phase 14 must not add realtime streaming, continuous listening, partial transcripts, interruption/barge-in handling, WebRTC avatar sessions, full voice/video calls, billing UI/enforcement, React SDK, self-hosted avatar engine, voice cloning, custom voice upload, advanced noise cancellation, or speaker identification.
 
 ## Phase 1 decisions (implemented)
 

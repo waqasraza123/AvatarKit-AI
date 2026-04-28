@@ -141,3 +141,47 @@ export async function fetchRelevantKnowledgeChunksForPreview({
     position: item.chunk.position
   }))
 }
+
+export async function fetchReadyKnowledgeChunksForRuntime({
+  workspaceId,
+  maxChunks = 24
+}: {
+  workspaceId: string
+  maxChunks?: number
+}): Promise<RuntimeKnowledgeChunkForRuntime[]> {
+  const chunks = await prisma.knowledgeChunk.findMany({
+    where: {
+      workspaceId,
+      source: {
+        status: KnowledgeStatus.READY
+      }
+    },
+    orderBy: { createdAt: "desc" },
+    take: maxChunks,
+    select: {
+      id: true,
+      sourceId: true,
+      content: true,
+      metadata: true,
+      position: true,
+      source: {
+        select: {
+          title: true,
+          type: true
+        }
+      }
+    }
+  })
+
+  return chunks.map(chunk => ({
+    id: chunk.id,
+    sourceId: chunk.sourceId,
+    sourceTitle: chunk.source.title,
+    sourceType: chunk.source.type,
+    content: chunk.content,
+    metadata: chunk.metadata && typeof chunk.metadata === "object"
+      ? chunk.metadata as Record<string, unknown>
+      : null,
+    position: chunk.position
+  }))
+}

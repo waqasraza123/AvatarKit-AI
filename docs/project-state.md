@@ -57,7 +57,7 @@ auth, workspace isolation, dashboard shell, and future avatar/knowledge/runtime 
 
 ## Current Phase
 
-Phase 13 is now implemented pending manual approval: Lead Capture.
+Phase 14 is now implemented pending manual approval: Voice Input v1.
 
 ## Completed Major Slices
 
@@ -131,6 +131,13 @@ Phase 13 is now implemented pending manual approval: Lead Capture.
 - `/dashboard/leads` and `/dashboard/leads/[leadId]` are real lead review surfaces with status management.
 - Conversation list/detail surfaces now show linked lead state.
 - Dashboard overview shows real new and total lead counts.
+- Python STT provider abstraction supports MOCK, OPENAI Whisper, and Deepgram optional routing.
+- Runtime input modes now include `text` and `audio`; audio input is transcribed before the existing text answer pipeline runs.
+- Avatar Studio Preview supports push-to-talk microphone recording with permission denied, unsupported browser, recording, transcribing, transcript preview, and text fallback states.
+- Dashboard voice input recordings are stored as private `VOICE_INPUT_AUDIO` avatar assets and linked from visitor messages.
+- Conversation detail transcripts show voice input audio and STT metadata for visitor messages.
+- Runtime traces include `stt.started`, `stt.completed`, `stt.failed`, `audio_input.stored`, and `audio_input.failed`.
+- Widget microphone input is intentionally deferred; widget text/audio/video responses and lead capture remain unchanged.
 
 ## Important Decisions
 
@@ -169,17 +176,22 @@ Phase 13 is now implemented pending manual approval: Lead Capture.
 - Phase 13 lead submit endpoint reuses published-avatar eligibility and widget domain allowlist checks.
 - Lead reads are available to workspace members; lead status updates are restricted to OWNER, ADMIN, and OPERATOR.
 - Default Phase 13 lead fields are name, email, phone, and message. Empty submissions are rejected and invalid email/phone values are blocked server-side.
+- Phase 14 voice input is push-to-talk only and dashboard-preview-only.
+- Python owns STT provider execution; TypeScript validates/stores recordings and sends internal audio payloads to the Python runtime.
+- `MOCK` STT requires no external keys and uses `AI_RUNTIME_MOCK_STT_TRANSCRIPT` when configured.
+- Voice input accepts only `audio/webm`, `audio/mpeg`, `audio/wav`, and `audio/mp4`, with a 10MB size limit and 60 second duration limit.
+- Transcription failure does not create an empty visitor message.
 
 ## Non-Negotiable Rules (still active)
 
 - Preserve existing architecture conventions and phase boundaries.
 - Do not add production logic for future phases ahead of their designated order.
 - Strong validation at request/action boundaries.
-- No future feature flows beyond Phase 13 lead capture: no STT, microphone input, billing, realtime streaming, public sharing, React SDK, inline widget, kiosk mode, operator handoff, CRM sync, notifications, webhooks, analytics, 3D rendering, or self-hosted avatar engine.
+- No future feature flows beyond Phase 14 voice input: no realtime streaming, continuous listening, partial transcripts, barge-in/interruption handling, full voice/video call UX, billing, public sharing, React SDK, inline widget voice input, kiosk mode, operator handoff, CRM sync, notifications, webhooks, analytics, 3D rendering, voice cloning, custom voice upload, or self-hosted avatar engine.
 
 ## Current Next Step
 
-Phase 13 implementation is pending manual approval in `docs/development.md`.
+Phase 14 implementation is pending manual approval in `docs/development.md`.
 
 ## Verification Commands (manual, user-run)
 
@@ -189,6 +201,7 @@ Phase 13 implementation is pending manual approval in `docs/development.md`.
 - `pnpm db:generate`
 - `pnpm db:migrate`
 - `pnpm db:seed`
+- Set `AI_RUNTIME_STT_PROVIDER=MOCK`
 - `pnpm dev:web`
 - `pnpm dev:api`
 - `pnpm dev:ai-runtime`

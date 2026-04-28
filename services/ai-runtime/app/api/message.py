@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import binascii
 from datetime import UTC, datetime
 from typing import Any, Dict, List, Literal
 
@@ -31,6 +33,11 @@ from app.runtime.tts import (
     TtsVoiceMetadata,
     build_tts_provider,
     encode_audio_base64,
+)
+from app.runtime.stt import (
+    SttAudioInput,
+    SttProviderError,
+    build_stt_provider,
 )
 
 
@@ -111,14 +118,34 @@ class RuntimeVideoError(BaseModel):
     provider: str | None = None
 
 
+class RuntimeAudioInputReference(BaseModel):
+    assetId: str
+    audioBase64: str
+    mimeType: str
+    fileName: str
+    sizeBytes: int
+    durationSeconds: float | None = None
+
+
+class RuntimeTranscriptionOutput(BaseModel):
+    text: str
+    language: str | None = None
+    confidence: float | None = None
+    durationSeconds: float | None = None
+    usage: Dict[str, Any] = Field(default_factory=dict)
+    provider: str
+    model: str | None = None
+
+
 class RuntimeMessageRequest(BaseModel):
     workspaceId: str
     avatarId: str
     conversationId: str
     messageId: str
     channel: Literal["DASHBOARD_PREVIEW", "WIDGET", "KIOSK", "API"]
-    inputType: Literal["text"]
-    inputText: str
+    inputType: Literal["text", "audio"]
+    inputText: str = ""
+    audioInput: RuntimeAudioInputReference | None = None
     outputMode: Literal["text", "audio", "video"]
     visitorMessageCount: int = 1
     avatarConfig: RuntimeAvatarConfig
@@ -169,6 +196,7 @@ class RuntimeMessageResponse(BaseModel):
     audioError: RuntimeAudioError | None = None
     video: RuntimeVideoOutput | None = None
     videoError: RuntimeVideoError | None = None
+    transcription: RuntimeTranscriptionOutput | None = None
 
 
 class SourceSimilarity:
@@ -332,13 +360,15 @@ def _has_buying_intent(text: str) -> bool:
 def _resolve_lead_capture(
     request: RuntimeMessageRequest,
     status: Literal["ok", "fallback", "blocked", "error"],
-    confidence: float
+    confidence: float,
+    input_text: str | None = None
 ) -> RuntimeLeadCapture:
     preference = request.avatarConfig.leadCapturePreference.strip().lower()
+    lead_text = input_text if input_text is not None else request.inputText
     if preference == "never automatically ask":
         return RuntimeLeadCapture()
 
-    if preference == "ask when visitor shows buying intent" and _has_buying_intent(request.inputText):
+    if preference == "ask when visitor shows buying intent" and _has_buying_intent(lead_text):
         return _lead_capture_request("buying_intent")
 
     if preference == "ask when avatar cannot answer" and (status in ("fallback", "error") or confidence < 0.32):
@@ -377,9 +407,11 @@ def _build_error_payload(
     request: RuntimeMessageRequest,
     elapsed_ms: int,
     provider_name: str,
-    reason: str
+    reason: str,
+    input_text: str | None = None,
+    transcription: RuntimeTranscriptionOutput | None = None
 ) -> RuntimeMessageResponse:
-    lead_capture = _resolve_lead_capture(request, "error", 0.18)
+    lead_capture = _resolve_lead_capture(request, "error", 0.18, input_text)
     return RuntimeMessageResponse(
         conversationId=request.conversationId,
         messageId=request.messageId,
@@ -406,7 +438,59 @@ def _build_error_payload(
         audio=None,
         audioError=None,
         video=None,
-        videoError=None
+        videoError=None,
+        transcription=transcription
+    )
+
+
+def _decode_audio_base64(audio_base64: str) -> bytes:
+    try:
+        return base64.b64decode(audio_base64, validate=True)
+    except binascii.Error as exc:
+        raise SttProviderError("audio payload is not valid base64") from exc
+
+
+async def _resolve_runtime_input_text(
+    request: RuntimeMessageRequest
+) -> tuple[str, RuntimeTranscriptionOutput | None]:
+    if request.inputType == "text":
+        user_input = request.inputText.strip()
+        if not user_input:
+            raise HTTPException(status_code=400, detail="inputText is required.")
+        return user_input, None
+
+    if request.audioInput is None:
+        raise HTTPException(status_code=400, detail="audioInput is required for audio input.")
+
+    audio_bytes = _decode_audio_base64(request.audioInput.audioBase64)
+    provider = build_stt_provider()
+    try:
+        output = await provider.transcribe_audio(
+            SttAudioInput(
+                audio_bytes=audio_bytes,
+                mime_type=request.audioInput.mimeType,
+                file_name=request.audioInput.fileName,
+                language=request.visitorLanguage or request.avatarConfig.language,
+                duration_seconds=request.audioInput.durationSeconds
+            )
+        )
+    except SttProviderError as exc:
+        raise HTTPException(status_code=422, detail=f"Transcription failed: {str(exc)}") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail="Transcription failed.") from exc
+
+    transcript = output.transcript.strip()
+    if not transcript:
+        raise HTTPException(status_code=422, detail="Transcription returned no text.")
+
+    return transcript, RuntimeTranscriptionOutput(
+        text=transcript,
+        language=output.language,
+        confidence=output.confidence,
+        durationSeconds=output.duration_seconds,
+        usage=output.usage,
+        provider=output.metadata.provider,
+        model=output.metadata.model
     )
 
 
@@ -572,11 +656,8 @@ async def runtime_message(
 ) -> RuntimeMessageResponse:
     _require_service_token(x_service_token)
 
-    user_input = request.inputText.strip()
-    if not user_input:
-        raise HTTPException(status_code=400, detail="inputText is required.")
-
     started_at = datetime.now(UTC)
+    user_input, transcription = await _resolve_runtime_input_text(request)
     chunks = list(request.knowledgeChunks)
     query_terms = _normalize_query(user_input)
     query_terms.extend(_normalize_query(request.avatarConfig.businessInstructions))
@@ -596,7 +677,7 @@ async def runtime_message(
         )
         audio, audio_error = await _generate_audio_for_response(request, answer)
         video, video_error = await _generate_video_for_response(request, answer, audio)
-        lead_capture = _resolve_lead_capture(request, "fallback", 0.2)
+        lead_capture = _resolve_lead_capture(request, "fallback", 0.2, user_input)
         return RuntimeMessageResponse(
             conversationId=request.conversationId,
             messageId=request.messageId,
@@ -620,7 +701,8 @@ async def runtime_message(
             audio=audio,
             audioError=audio_error,
             video=video,
-            videoError=video_error
+            videoError=video_error,
+            transcription=transcription
         )
 
     if not safety.allowed:
@@ -631,7 +713,7 @@ async def runtime_message(
         )
         audio, audio_error = await _generate_audio_for_response(request, answer)
         video, video_error = await _generate_video_for_response(request, answer, audio)
-        lead_capture = _resolve_lead_capture(request, "blocked", safety.confidence)
+        lead_capture = _resolve_lead_capture(request, "blocked", safety.confidence, user_input)
         return RuntimeMessageResponse(
             conversationId=request.conversationId,
             messageId=request.messageId,
@@ -655,7 +737,8 @@ async def runtime_message(
             audio=audio,
             audioError=audio_error,
             video=video,
-            videoError=video_error
+            videoError=video_error,
+            transcription=transcription
         )
 
     context = _build_context(chunks)
@@ -673,14 +756,18 @@ async def runtime_message(
             request=request,
             elapsed_ms=int((datetime.now(UTC) - started_at).total_seconds() * 1000),
             provider_name="MOCK",
-            reason=str(error)
+            reason=str(error),
+            input_text=user_input,
+            transcription=transcription
         )
     except Exception:
         return _build_error_payload(
             request=request,
             elapsed_ms=int((datetime.now(UTC) - started_at).total_seconds() * 1000),
             provider_name="MOCK",
-            reason="provider_execution_failed"
+            reason="provider_execution_failed",
+            input_text=user_input,
+            transcription=transcription
         )
 
     elapsed_ms = int((datetime.now(UTC) - started_at).total_seconds() * 1000)
@@ -718,7 +805,7 @@ async def runtime_message(
         intent=intent,
         confidence=match_ratio,
         answer=response_text,
-        lead_capture=_resolve_lead_capture(request, response_status, match_ratio),
+        lead_capture=_resolve_lead_capture(request, response_status, match_ratio, user_input),
         handoff_request=(
             _resolve_handoff_decision(response_status, safety, matched_chunk_count > 0) == "request"
         ),
@@ -760,5 +847,6 @@ async def runtime_message(
         audio=audio,
         audioError=audio_error,
         video=video,
-        videoError=video_error
+        videoError=video_error,
+        transcription=transcription
     )
