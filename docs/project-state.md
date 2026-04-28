@@ -74,7 +74,7 @@ auth, workspace isolation, dashboard shell, and future avatar/knowledge/runtime 
 
 ## Current Phase
 
-Phase 20 is now implemented pending manual approval: Billing Foundation.
+Phase 21 is now implemented pending manual approval: Admin, Operations, and Observability.
 
 ## Completed Major Slices
 
@@ -195,6 +195,10 @@ Phase 20 is now implemented pending manual approval: Billing Foundation.
 - Static billing plan configuration now defines Free, Starter, Growth, Agency, and Enterprise limits in `apps/web/src/lib/billing.ts`.
 - `/dashboard/billing` is a real billing foundation page with current plan, billing status, current period, current-month usage mapped to plan limits, soft warnings, plan comparison, upgrade placeholder, and billing history placeholder.
 - Billing usage maps existing workspace data to limits for avatars, monthly conversations, video minutes, voice minutes, knowledge sources, team members, widget domains, and API keys.
+- `/dashboard/operations` is a real workspace-scoped operations surface for operator-or-higher roles.
+- Operations dashboard summarizes runtime failures, provider failures, trace latency, open safety events, widget error rate, and usage spikes.
+- Operations dashboard supports avatar search, avatar status filtering, provider error inspection, runtime failure inspection, recent trace inspection, safety event inspection, and usage spike review.
+- Owner/admin operations actions can suspend and unsuspend avatars; operator roles can inspect operations data without mutating avatar state.
 
 ## Important Decisions
 
@@ -264,17 +268,21 @@ Phase 20 is now implemented pending manual approval: Billing Foundation.
 - Phase 20 plan limits are static TypeScript configuration, not payment-provider state.
 - Phase 20 soft warnings do not block avatar creation, publish, runtime responses, media generation, widget access, or public API access.
 - Phase 20 billing period usage and display default to the current calendar month unless explicit `BillingAccount` period dates exist.
+- Phase 21 operations data is workspace-scoped; global platform-admin identity and cross-workspace search remain deferred.
+- Phase 21 provider errors are inspected from persisted `RuntimeTrace` failure rows and provider metadata rather than a separate provider incident table.
+- Phase 21 usage spikes are soft operational signals comparing a selected window to the previous matching window.
+- Phase 21 avatar unsuspend restores the previous status from suspension metadata when available and falls back conservatively when not available.
 
 ## Non-Negotiable Rules (still active)
 
 - Preserve existing architecture conventions and phase boundaries.
 - Do not add production logic for future phases ahead of their designated order.
 - Strong validation at request/action boundaries.
-- No future feature flows beyond Phase 20 billing foundation: no Stripe, checkout, subscriptions, invoices, payment methods, billing portal, hard usage blocking, automatic plan mutation, paid feature gates, inline widget voice input upload, continuous listening, WebRTC avatar calls, barge-in/interruption handling, kiosk mode, operator handoff workflow, CRM sync, notifications, webhook delivery workers, 3D rendering, voice cloning, custom voice upload, public identity verification, KYC, biometric face recognition, external celebrity detection, or self-hosted avatar engine.
+- No future feature flows beyond Phase 21 operations observability: no Stripe, checkout, subscriptions, invoices, payment methods, billing portal, hard usage blocking, automatic plan mutation, paid feature gates, global platform-admin identity, cross-workspace search, queue infrastructure, external observability vendor integration, alert delivery, automatic provider retries, inline widget voice input upload, continuous listening, WebRTC avatar calls, barge-in/interruption handling, kiosk mode, operator handoff workflow, CRM sync, notifications, webhook delivery workers, 3D rendering, voice cloning, custom voice upload, public identity verification, KYC, biometric face recognition, external celebrity detection, or self-hosted avatar engine.
 
 ## Current Next Step
 
-Phase 20 implementation is pending manual approval in `docs/development.md` and `docs/development/phase-20-billing-foundation.md`.
+Phase 21 implementation is pending manual approval in `docs/development.md` and `docs/development/phase-21-admin-operations-observability.md`.
 
 ## Verification Commands (manual, user-run)
 

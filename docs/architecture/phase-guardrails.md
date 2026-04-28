@@ -199,6 +199,14 @@
   - Billing period usage and display default to the current calendar month unless explicit billing account period dates exist.
   - Upgrade and billing history UI must remain placeholders until payment provider integration exists.
 - Phase 20 must not add Stripe, checkout, invoices, payment methods, billing portal links, automatic plan mutation, hard usage blocking, paid feature gates, tax handling, coupons, metered invoicing, or customer balance logic.
+- Phase 21 adds admin operations and observability only:
+  - Operations data is workspace-scoped and available to `OPERATOR` and higher roles.
+  - Avatar suspend and unsuspend operations are restricted to `OWNER` and `ADMIN`.
+  - Provider errors are inspected from persisted `RuntimeTrace` failure rows and provider metadata.
+  - Runtime traces, safety events, usage events, conversations, and avatar status remain the durable observability sources.
+  - Usage spike detection compares the selected period with the immediately preceding period and only displays soft operational signals.
+  - Unsuspending an avatar may restore the prior status captured in suspension metadata, otherwise it must fall back conservatively.
+- Phase 21 must not add global platform-admin identities, cross-workspace search, queue infrastructure, external observability vendors, alert delivery, automatic provider retries, hard abuse enforcement, billing enforcement, CRM workflows, webhook delivery workers, WebRTC calls, 3D rendering, or self-hosted runtime work.
 
 ## Phase 1 decisions (implemented)
 

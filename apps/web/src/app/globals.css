@@ -2484,6 +2484,40 @@ select {
   line-height: 1.45;
 }
 
+.operations-filter-row {
+  display: grid;
+  grid-template-columns: 2fr minmax(180px, 1fr) minmax(140px, 0.6fr);
+  gap: 12px;
+}
+
+.operations-filter-row label {
+  display: grid;
+  gap: 6px;
+  color: #22304a;
+  font-weight: 700;
+}
+
+.operations-filter-row input,
+.operations-filter-row select {
+  min-height: 40px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 0 12px;
+  font: inherit;
+}
+
+.operations-metric-grid {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.operations-trace-table {
+  min-width: 960px;
+}
+
 .placeholder-block {
   border-top: 1px solid var(--panel-border);
   padding-top: 14px;
@@ -2605,7 +2639,9 @@ select {
   .usage-summary-grid,
   .billing-current-grid,
   .billing-limit-grid,
-  .billing-plan-grid {
+  .billing-plan-grid,
+  .operations-filter-row,
+  .operations-metric-grid {
     grid-template-columns: 1fr;
   }
 

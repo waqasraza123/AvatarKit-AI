@@ -1,5 +1,22 @@
 # Development
 
+## Phase 21 - Admin, Operations, and Observability
+
+Detailed Phase 21 operations notes live in `docs/development/phase-21-admin-operations-observability.md`.
+
+Phase 21 adds:
+
+- `/dashboard/operations`
+- workspace-scoped operations access for operator-or-higher roles
+- owner/admin avatar suspend and unsuspend actions
+- runtime failure inspection
+- provider error inspection from persisted runtime traces
+- safety event inspection
+- usage spike comparison against the previous matching period
+- operations documentation and guardrails
+
+Verification was intentionally not run for the implementation pass requested on April 29, 2026. Before approving this phase manually, follow the checklist in `docs/development/phase-21-admin-operations-observability.md`.
+
 ## Phase 20 - Billing Foundation
 
 Detailed Phase 20 billing foundation notes live in `docs/development/phase-20-billing-foundation.md`.
