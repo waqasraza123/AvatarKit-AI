@@ -1,5 +1,21 @@
 # Development
 
+## Phase 24 - Agency and White-Label Features
+
+Detailed Phase 24 agency notes live in `docs/development/phase-24-agency-white-label.md`.
+
+Phase 24 adds:
+
+- `WorkspaceBranding` for workspace-level widget brand settings
+- `WorkspaceClientProfile` for client handoff metadata and checklist state
+- `/dashboard/agency`
+- agency workspace overview across current memberships
+- safe avatar template duplication
+- white-label widget brand name, custom logo URL, accent color, and plan-gated AvatarKit branding removal
+- client setup instruction export text
+
+Verification was intentionally not run for the implementation pass requested on April 29, 2026. Before approving this phase manually, generate Prisma client, apply a migration, and follow the checklist in `docs/development/phase-24-agency-white-label.md`.
+
 ## Phase 23 - Kiosk Mode
 
 Detailed Phase 23 kiosk notes live in `docs/development/phase-23-kiosk-mode.md`.

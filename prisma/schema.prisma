@@ -40,6 +40,8 @@ model Workspace {
   widgetSettings  WidgetSettings[]
   kioskSettings   KioskSettings[]
   allowedDomains  AllowedDomain[]
+  branding         WorkspaceBranding?
+  clientProfile    WorkspaceClientProfile?
   usageEvents     UsageEvent[]
   safetyEvents    SafetyEvent[]
   knowledgeGaps   KnowledgeGap[]
@@ -132,6 +134,38 @@ model KioskSettings {
   @@index([workspaceId])
   @@index([workspaceId, avatarId])
   @@index([enabled])
+}
+
+model WorkspaceBranding {
+  id                     String   @id @default(cuid())
+  workspaceId            String   @unique
+  brandName              String?
+  customLogoUrl          String?
+  widgetAccentColor      String?
+  hideAvatarKitBranding  Boolean  @default(false)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([hideAvatarKitBranding])
+}
+
+model WorkspaceClientProfile {
+  id                  String   @id @default(cuid())
+  workspaceId         String   @unique
+  clientName          String?
+  clientContactName   String?
+  clientContactEmail  String?
+  handoffNotes        String?
+  checklist           Json?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
 }
 
 model AllowedDomain {

@@ -35,6 +35,7 @@ import {
 import { isVoiceLanguageCompatible } from "@/lib/avatar-voice-shared"
 import { fetchRelevantKnowledgeChunksForPreview } from "@/lib/avatar-runtime-retrieval"
 import { sendRuntimeTextMessage, type RuntimeLeadCapture, type RuntimeResponse } from "@/lib/avatar-runtime-client"
+import { canUseWhiteLabelPlan, fetchOrCreateWorkspaceBranding } from "@/lib/agency"
 import {
   buildConversationMessageUsageEvent,
   buildRuntimeResponseUsageEvents,
@@ -79,6 +80,9 @@ export type WidgetPublicConfig = {
   theme: WidgetThemeValue
   position: WidgetPositionValue
   primaryColor: string | null
+  brandName: string | null
+  customLogoUrl: string | null
+  hideAvatarKitBranding: boolean
   supportedOutputModes: WidgetOutputMode[]
   defaultOutputMode: WidgetOutputMode
 }
@@ -416,8 +420,16 @@ export async function getPublicWidgetConfig(avatarId: string, request: Request):
     throw new WidgetPublicError(404, "avatar_unavailable", "Avatar is not available for public widget use.")
   }
 
-  const settings = await fetchWidgetSettingsOrDefault(avatar)
+  const [settings, branding, billingAccount] = await Promise.all([
+    fetchWidgetSettingsOrDefault(avatar),
+    fetchOrCreateWorkspaceBranding(avatar.workspaceId),
+    prisma.billingAccount.findUnique({
+      where: { workspaceId: avatar.workspaceId },
+      select: { plan: true }
+    })
+  ])
   const modes = resolveWidgetOutputModes(avatar)
+  const canHideBranding = canUseWhiteLabelPlan(billingAccount?.plan)
 
   return {
     avatarId: avatar.id,
@@ -428,7 +440,10 @@ export async function getPublicWidgetConfig(avatarId: string, request: Request):
     greetingText: settings.greetingText,
     theme: settings.theme,
     position: settings.position,
-    primaryColor: settings.primaryColor,
+    primaryColor: settings.primaryColor ?? branding.widgetAccentColor,
+    brandName: branding.brandName,
+    customLogoUrl: branding.customLogoUrl,
+    hideAvatarKitBranding: canHideBranding && branding.hideAvatarKitBranding,
     ...modes
   }
 }

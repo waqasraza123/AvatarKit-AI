@@ -227,6 +227,17 @@
   - privacy timeout must end active kiosk conversations and reject stale message submissions server-side
   - browser voice input may be used only as a text transcript source with text fallback
 - Phase 23 must not add WebRTC avatar calls, continuous listening, barge-in, live staff chat, kiosk hardware management, offline runtime, custom kiosk lead forms, payment or booking flows, CRM integrations, production self-hosted inference, browser-rendered 3D avatar mode, or new public API/SDK contracts.
+- Phase 24 adds agency and white-label features only:
+  - agency dashboard access is limited to workspaces where the current user already has membership
+  - workspace switching must continue to enforce membership checks
+  - white-label settings are workspace-scoped in `WorkspaceBranding`
+  - client handoff metadata is workspace-scoped in `WorkspaceClientProfile`
+  - hiding AvatarKit branding must be plan-gated to Agency or Enterprise plans
+  - public widget config may expose safe brand name, logo URL, accent color, and branding visibility only
+  - avatar duplication requires target workspace `OPERATOR` or higher access
+  - duplicated avatars must be created as drafts
+  - duplicated avatars must not copy source photos, consent records, knowledge sources, generated media, conversations, leads, widget settings, kiosk settings, or publish state
+- Phase 24 must not add custom domains, checkout, automatic plan changes, global platform-admin roles, cross-workspace search outside memberships, CRM sync, notifications, contract generation, public arbitrary workspace mutation, production self-hosted inference, or new public API/SDK contracts.
 
 ## Phase 1 decisions (implemented)
 

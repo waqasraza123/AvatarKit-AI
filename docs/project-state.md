@@ -70,12 +70,14 @@ auth, workspace isolation, dashboard shell, and future avatar/knowledge/runtime 
   - `WidgetTheme` enum
   - `WidgetPosition` enum
   - `KioskSettings`
+  - `WorkspaceBranding`
+  - `WorkspaceClientProfile`
   - `AllowedDomain`
 - `apps/web` uses route-level server components and server actions for all auth/workspace flows.
 
 ## Current Phase
 
-Phase 23 is now implemented pending manual approval: Kiosk Mode.
+Phase 24 is now implemented pending manual approval: Agency and White-Label Features.
 
 ## Completed Major Slices
 
@@ -213,6 +215,13 @@ Phase 23 is now implemented pending manual approval: Kiosk Mode.
 - Kiosk lead capture submissions persist as `LeadSource.KIOSK` and reuse central lead validation and safety checks.
 - Kiosk runtime flows record kiosk-specific usage, runtime traces, safety events, and knowledge gaps.
 - Kiosk UI includes idle attract state, touch-first controls, browser voice transcript support when available, text fallback, reset, QR handoff, staff call, inactivity reset, and privacy timeout behavior.
+- First-class `WorkspaceBranding` model now stores workspace-scoped white-label widget settings.
+- First-class `WorkspaceClientProfile` model now stores client handoff metadata and checklist state.
+- `/dashboard/agency` is a real agency workspace surface scoped to the current user's workspace memberships.
+- Agency dashboard shows client workspace overview, active workspace branding, active client handoff profile, safe avatar duplication, and setup instruction export text.
+- Avatar template duplication requires source membership and target workspace operator-or-higher access.
+- Duplicated avatars are always drafts and do not copy source photos, consent, generated media, knowledge, conversations, leads, widget settings, kiosk settings, or publish state.
+- Public widget config now exposes safe white-label brand fields and defensively plan-gates hiding AvatarKit branding to Agency or Enterprise plans.
 
 ## Important Decisions
 
@@ -295,17 +304,21 @@ Phase 23 is now implemented pending manual approval: Kiosk Mode.
 - Kiosk runtime is text-message persistence with optional browser speech transcription; raw public microphone recording, STT media storage, WebRTC, continuous listening, and barge-in are intentionally not added.
 - Kiosk inactivity is a client-visible idle reset; kiosk privacy timeout also ends active conversations and is enforced server-side before accepting messages.
 - Kiosk QR handoff and staff-call controls are links only; live staff chat, booking, payment, CRM sync, and device management are outside Phase 23.
+- Phase 24 agency mode does not introduce global agency-admin identity; users can see and manage only workspaces where they already have membership.
+- White-label data is workspace-scoped and public widget config exposes only safe brand name, logo URL, accent color, and branding visibility fields.
+- Avatar duplication is a template workflow, not a data export; client media, consent, knowledge, conversations, leads, public settings, and publish state remain isolated.
+- Hiding AvatarKit branding is allowed only for Agency and Enterprise billing plans and remains defensively gated at public config time.
 
 ## Non-Negotiable Rules (still active)
 
 - Preserve existing architecture conventions and phase boundaries.
 - Do not add production logic for future phases ahead of their designated order.
 - Strong validation at request/action boundaries.
-- No future feature flows beyond Phase 23 kiosk mode: no Stripe, checkout, subscriptions, invoices, payment methods, billing portal, hard usage blocking, automatic plan mutation, paid feature gates, global platform-admin identity, cross-workspace search, production GPU queue persistence, external observability vendor integration, alert delivery, automatic provider retries, customer-facing self-hosted controls, inline widget voice input upload, continuous listening, WebRTC avatar calls, realtime lip-sync transport, barge-in/interruption handling, operator handoff workflow, live staff chat, kiosk hardware management, offline runtime, CRM sync, notifications, webhook delivery workers, browser-rendered 3D avatar mode, voice cloning, custom voice upload, public identity verification, KYC, biometric face recognition, external celebrity detection, or production self-hosted inference.
+- No future feature flows beyond Phase 24 agency and white-label features: no Stripe, checkout, subscriptions, invoices, payment methods, billing portal, hard usage blocking, automatic plan mutation, global platform-admin identity, cross-workspace search outside current memberships, custom domains, production GPU queue persistence, external observability vendor integration, alert delivery, automatic provider retries, customer-facing self-hosted controls, inline widget voice input upload, continuous listening, WebRTC avatar calls, realtime lip-sync transport, barge-in/interruption handling, operator handoff workflow, live staff chat, kiosk hardware management, offline runtime, CRM sync, notifications, webhook delivery workers, browser-rendered 3D avatar mode, voice cloning, custom voice upload, public identity verification, KYC, biometric face recognition, external celebrity detection, or production self-hosted inference.
 
 ## Current Next Step
 
-Phase 23 implementation is pending manual approval in `docs/development.md` and `docs/development/phase-23-kiosk-mode.md`.
+Phase 24 implementation is pending manual approval in `docs/development.md` and `docs/development/phase-24-agency-white-label.md`.
 
 ## Verification Commands (manual, user-run)
 

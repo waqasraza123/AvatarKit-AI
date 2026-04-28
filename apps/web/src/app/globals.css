@@ -2180,6 +2180,81 @@ select {
   margin-top: 0;
 }
 
+.agency-summary-grid,
+.agency-workspace-grid,
+.agency-management-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.agency-summary-grid {
+  margin-top: 18px;
+  grid-template-columns: repeat(4, minmax(140px, 1fr));
+}
+
+.agency-summary-grid div,
+.agency-workspace-card {
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  background: #f8fbff;
+  padding: 14px;
+  animation: ak-fade-up var(--motion-slow) var(--motion-ease-emphasis) both;
+  transition:
+    border-color var(--motion-medium) var(--motion-ease),
+    box-shadow var(--motion-medium) var(--motion-ease),
+    transform var(--motion-medium) var(--motion-ease);
+}
+
+.agency-summary-grid div:hover,
+.agency-workspace-card:hover {
+  border-color: rgba(53, 92, 255, 0.24);
+  box-shadow: var(--motion-shadow);
+  transform: translateY(var(--motion-hover-y));
+}
+
+.agency-summary-grid span {
+  display: block;
+  color: #1a2a4d;
+  font-size: 1.45rem;
+  font-weight: 800;
+}
+
+.agency-summary-grid p {
+  margin: 4px 0 0;
+}
+
+.agency-workspace-grid {
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
+}
+
+.agency-workspace-card {
+  display: grid;
+  gap: 12px;
+}
+
+.agency-workspace-card-active {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.agency-management-grid,
+.agency-form-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.agency-form {
+  margin-top: 0;
+}
+
+.agency-checklist-form {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  background: #f8fbff;
+  padding: 12px;
+}
+
 .kiosk-form-grid,
 .kiosk-preview-grid {
   display: grid;
@@ -2971,6 +3046,8 @@ select {
   .domain-empty-state:hover,
   .domain-row:hover,
   .embed-instructions:hover,
+  .agency-summary-grid div:hover,
+  .agency-workspace-card:hover,
   .kiosk-preview-grid div:hover,
   .kiosk-voice-button:hover:not(:disabled),
   .kiosk-send-button:hover:not(:disabled),
@@ -3027,6 +3104,10 @@ select {
   .kiosk-form-grid,
   .kiosk-preview-grid,
   .kiosk-lead-grid,
+  .agency-summary-grid,
+  .agency-workspace-grid,
+  .agency-management-grid,
+  .agency-form-grid,
   .usage-summary-grid,
   .billing-current-grid,
   .billing-limit-grid,

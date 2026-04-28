@@ -15,6 +15,7 @@ const navigationItems = [
   { label: "Billing", href: "/dashboard/billing" },
   { label: "Safety", href: "/dashboard/safety" },
   { label: "Operations", href: "/dashboard/operations" },
+  { label: "Agency", href: "/dashboard/agency" },
   { label: "Developers", href: "/dashboard/developers" },
   { label: "Settings", href: "/dashboard/settings" }
 ]
