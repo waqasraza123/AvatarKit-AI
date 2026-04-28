@@ -35,6 +35,15 @@ type PreviewState = {
 }
 
 type PreviewOutputMode = "text" | "audio" | "video"
+type PreviewTransportMode = "standard" | "realtime"
+
+type RealtimeTranscriptMessage = {
+  id: string
+  role: "visitor" | "avatar" | "system"
+  content: string
+  audioUrl?: string | null
+  videoUrl?: string | null
+}
 
 const initialState: PreviewState = {
   status: "idle",
@@ -132,7 +141,15 @@ export default function AvatarPreviewPanel({
     conversation: initialConversation
   } as PreviewState)
   const [outputMode, setOutputMode] = useState<PreviewOutputMode>("text")
+  const [transportMode, setTransportMode] = useState<PreviewTransportMode>("standard")
   const [voiceState, setVoiceState] = useState<PreviewState | null>(null)
+  const [realtimeSessionId, setRealtimeSessionId] = useState("")
+  const [realtimeConversationId, setRealtimeConversationId] = useState("")
+  const [realtimeStatus, setRealtimeStatus] = useState<"idle" | "listening" | "transcribing" | "thinking" | "speaking" | "waiting" | "failed" | "ended">("idle")
+  const [realtimeInput, setRealtimeInput] = useState("")
+  const [realtimeError, setRealtimeError] = useState("")
+  const [realtimeMessages, setRealtimeMessages] = useState<RealtimeTranscriptMessage[]>([])
+  const [realtimePending, setRealtimePending] = useState(false)
   const [recordingState, setRecordingState] = useState<"idle" | "recording" | "error">("idle")
   const [recordingSeconds, setRecordingSeconds] = useState(0)
   const [recordingError, setRecordingError] = useState("")
@@ -156,6 +173,7 @@ export default function AvatarPreviewPanel({
     : `/dashboard/conversations?avatarId=${avatarId}&channel=DASHBOARD_PREVIEW`
 
   const canSubmit = canSend && isReady && !pending && !voicePending && (outputMode !== "video" || isVideoReady)
+  const canUseRealtime = canSend && isReady && !pending && !voicePending && !realtimePending && (outputMode !== "video" || isVideoReady)
   const canRecord = canSubmit && mediaRecorderSupported && recordingState !== "recording"
   const buttonText = pending || voicePending
     ? outputMode === "video"
@@ -338,6 +356,175 @@ export default function AvatarPreviewPanel({
     recorder.stop()
   }
 
+  async function startRealtimeSession() {
+    if (!canUseRealtime || realtimeSessionId) {
+      return
+    }
+
+    setRealtimeError("")
+    setRealtimePending(true)
+    try {
+      const response = await fetch(`/api/realtime/dashboard/${encodeURIComponent(avatarId)}/session`, {
+        method: "POST"
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        throw new Error(payload.message || "Realtime session could not be started.")
+      }
+      setRealtimeSessionId(String(payload.sessionId || ""))
+      setRealtimeConversationId(String(payload.conversationId || ""))
+      setRealtimeStatus("waiting")
+      setRealtimeMessages(current => current.concat({
+        id: `session-${Date.now()}`,
+        role: "system",
+        content: "Realtime session started."
+      }))
+    } catch (error) {
+      setRealtimeStatus("failed")
+      setRealtimeError(error instanceof Error ? error.message : "Realtime session could not be started.")
+    } finally {
+      setRealtimePending(false)
+    }
+  }
+
+  async function endRealtimeSession() {
+    if (!realtimeSessionId) {
+      return
+    }
+
+    setRealtimeError("")
+    setRealtimePending(true)
+    try {
+      const response = await fetch(`/api/realtime/dashboard/sessions/${encodeURIComponent(realtimeSessionId)}/end`, {
+        method: "POST"
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        throw new Error(payload.message || "Realtime session could not be ended.")
+      }
+      setRealtimeStatus("ended")
+      setRealtimeSessionId("")
+      setRealtimeMessages(current => current.concat({
+        id: `ended-${Date.now()}`,
+        role: "system",
+        content: "Realtime session ended."
+      }))
+    } catch (error) {
+      setRealtimeStatus("failed")
+      setRealtimeError(error instanceof Error ? error.message : "Realtime session could not be ended.")
+    } finally {
+      setRealtimePending(false)
+    }
+  }
+
+  async function consumeRealtimeStream(response: Response) {
+    const reader = response.body?.getReader()
+    if (!reader) {
+      throw new Error("Realtime stream is not available.")
+    }
+
+    const decoder = new TextDecoder()
+    let buffer = ""
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) {
+        break
+      }
+
+      buffer += decoder.decode(value, { stream: true })
+      const parts = buffer.split("\n\n")
+      buffer = parts.pop() ?? ""
+      for (const part of parts) {
+        const dataLine = part.split("\n").find(line => line.startsWith("data: "))
+        if (!dataLine) {
+          continue
+        }
+        const event = JSON.parse(dataLine.slice(6)) as {
+          type?: string
+          status?: typeof realtimeStatus
+          text?: string
+          message?: string
+          messageId?: string | null
+          promptText?: string | null
+          audioUrl?: string
+          videoUrl?: string
+        }
+        if (event.type === "avatar.status" && event.status) {
+          setRealtimeStatus(event.status)
+        }
+        if (event.type === "avatar.answer.final") {
+          setRealtimeMessages(current => current.concat({
+            id: event.messageId || `avatar-${Date.now()}`,
+            role: "avatar",
+            content: event.text || ""
+          }))
+          setRealtimeStatus("speaking")
+        }
+        if (event.type === "avatar.audio.ready" && event.audioUrl) {
+          setRealtimeMessages(current => current.map(message => message.id === event.messageId ? {
+            ...message,
+            audioUrl: event.audioUrl
+          } : message))
+        }
+        if (event.type === "avatar.video.ready" && event.videoUrl) {
+          setRealtimeMessages(current => current.map(message => message.id === event.messageId ? {
+            ...message,
+            videoUrl: event.videoUrl
+          } : message))
+        }
+        if (event.type === "lead.capture.requested") {
+          setRealtimeMessages(current => current.concat({
+            id: `lead-${Date.now()}`,
+            role: "system",
+            content: event.promptText || "Lead capture was requested for this response."
+          }))
+        }
+        if (event.type === "error") {
+          setRealtimeStatus("failed")
+          setRealtimeError(event.message || "Realtime message failed.")
+        }
+      }
+    }
+  }
+
+  async function sendRealtimeMessage() {
+    const content = realtimeInput.trim()
+    if (!content || !realtimeSessionId || realtimePending) {
+      return
+    }
+
+    setRealtimeError("")
+    setRealtimePending(true)
+    setRealtimeInput("")
+    setRealtimeStatus("thinking")
+    setRealtimeMessages(current => current.concat({
+      id: `visitor-${Date.now()}`,
+      role: "visitor",
+      content
+    }))
+    try {
+      const response = await fetch(`/api/realtime/dashboard/sessions/${encodeURIComponent(realtimeSessionId)}/message`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: content,
+          outputMode
+        })
+      })
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}))
+        throw new Error(payload.message || "Realtime message failed.")
+      }
+      await consumeRealtimeStream(response)
+      setRealtimeStatus("waiting")
+    } catch (error) {
+      setRealtimeStatus("failed")
+      setRealtimeError(error instanceof Error ? error.message : "Realtime message failed. Standard mode remains available.")
+    } finally {
+      setRealtimePending(false)
+    }
+  }
+
   return (
     <section className="avatar-step-panel avatar-preview-panel">
       <div>
@@ -349,6 +536,29 @@ export default function AvatarPreviewPanel({
         <p className="preview-labelling">Text, audio, and avatar video preview</p>
         <p className="form-helper">This is an internal dashboard preview. It does not publish an avatar, expose a widget, or enable public runtime access.</p>
       </div>
+      <fieldset className="preview-output-mode">
+        <legend>Preview mode</legend>
+        <label>
+          <input
+            type="radio"
+            name="transportMode"
+            value="standard"
+            checked={transportMode === "standard"}
+            onChange={() => setTransportMode("standard")}
+          />
+          Standard
+        </label>
+        <label>
+          <input
+            type="radio"
+            name="transportMode"
+            value="realtime"
+            checked={transportMode === "realtime"}
+            onChange={() => setTransportMode("realtime")}
+          />
+          Realtime
+        </label>
+      </fieldset>
       <div className="preview-media-grid">
         <div className="preview-photo-card">
           <span>Selected avatar photo</span>
@@ -394,6 +604,82 @@ export default function AvatarPreviewPanel({
       <Link className="avatarkit-link-button" href={conversationReviewPath}>
         Open latest preview conversation
       </Link>
+      {transportMode === "realtime" ? (
+        <div className="preview-composer realtime-preview-panel">
+          <div className="preview-voice-input">
+            <div>
+              <span>Realtime session</span>
+              <p>Status: {realtimeStatus}</p>
+              {realtimeConversationId ? <p>Conversation: {realtimeConversationId.slice(0, 8)}</p> : null}
+            </div>
+            <div className="preview-voice-actions">
+              <button className="avatarkit-button avatarkit-button-primary" type="button" onClick={startRealtimeSession} disabled={!canUseRealtime || Boolean(realtimeSessionId)}>
+                {realtimePending && !realtimeSessionId ? "Starting..." : "Start session"}
+              </button>
+              <button className="avatarkit-button avatarkit-button-secondary" type="button" onClick={endRealtimeSession} disabled={!realtimeSessionId || realtimePending}>
+                End session
+              </button>
+            </div>
+          </div>
+          {realtimeError ? <p className="preview-state-error">{realtimeError}</p> : null}
+          <fieldset className="preview-output-mode">
+            <legend>Output mode</legend>
+            <label>
+              <input type="radio" name="realtimeOutputMode" value="text" checked={outputMode === "text"} onChange={() => setOutputMode("text")} />
+              Text only
+            </label>
+            <label>
+              <input type="radio" name="realtimeOutputMode" value="audio" checked={outputMode === "audio"} onChange={() => setOutputMode("audio")} />
+              Text + audio
+            </label>
+            <label>
+              <input type="radio" name="realtimeOutputMode" value="video" checked={outputMode === "video"} onChange={() => setOutputMode("video")} />
+              Text + avatar video
+            </label>
+          </fieldset>
+          <label>
+            Send realtime text message
+            <textarea
+              rows={4}
+              value={realtimeInput}
+              onChange={event => setRealtimeInput(event.target.value)}
+              placeholder="Ask a business question in the realtime session."
+              maxLength={800}
+              disabled={!realtimeSessionId || realtimePending}
+            />
+          </label>
+          <button className="avatarkit-button avatarkit-button-primary" type="button" onClick={sendRealtimeMessage} disabled={!realtimeSessionId || realtimePending || realtimeInput.trim().length < 2}>
+            {realtimePending && realtimeSessionId ? "Sending..." : "Send realtime message"}
+          </button>
+          <div className="preview-transcript">
+            {realtimeMessages.length === 0 ? (
+              <div className="preview-empty">Start a session to see realtime events.</div>
+            ) : (
+              realtimeMessages.map(message => (
+                <div className={message.role === "visitor" ? "preview-message user" : message.role === "avatar" ? "preview-message avatar" : "preview-message"} key={message.id}>
+                  <p className="preview-message-meta">
+                    <span>{message.role}</span>
+                    <span>Realtime</span>
+                  </p>
+                  <p>{message.content}</p>
+                  {message.audioUrl ? (
+                    <div className="preview-audio-card">
+                      <span>Audio response</span>
+                      <audio controls preload="metadata" src={message.audioUrl} />
+                    </div>
+                  ) : null}
+                  {message.videoUrl ? (
+                    <div className="preview-video-card">
+                      <span>Video response</span>
+                      <video controls playsInline preload="metadata" src={message.videoUrl} />
+                    </div>
+                  ) : null}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      ) : (
         <form action={action} className="preview-composer">
         <input type="hidden" name="avatarId" value={avatarId} />
         {conversation?.conversationId ? <input type="hidden" name="conversationId" value={conversation.conversationId} /> : null}
@@ -495,6 +781,7 @@ export default function AvatarPreviewPanel({
           {buttonText}
         </button>
       </form>
+      )}
       {!isReady ? (
         <p className="form-helper">Fallback answers are shown only for safe behavior transitions and missing context.</p>
       ) : null}

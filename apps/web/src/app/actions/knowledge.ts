@@ -17,6 +17,7 @@ import {
   normalizeKnowledgeInput
 } from "@/lib/knowledge"
 import { prisma } from "@/lib/prisma"
+import { recordUsageEvents } from "@/lib/usage"
 import { getWorkspaceContextForRequest } from "@/lib/workspace"
 
 type KnowledgeActionState = {
@@ -189,8 +190,36 @@ export async function createKnowledgeFaqAction(
       }))
     })
 
-    return createdSource
+    return {
+      ...createdSource,
+      chunkCount: chunks.length
+    }
   })
+
+  await recordUsageEvents([
+    {
+      workspaceId: context.workspace.id,
+      eventType: "knowledge.source.created",
+      quantity: 1,
+      unit: "count",
+      metadata: {
+        sourceId: source.id,
+        sourceType: KnowledgeSourceType.FAQ
+      },
+      idempotencyKey: `knowledge-source-created:${source.id}`
+    },
+    {
+      workspaceId: context.workspace.id,
+      eventType: "knowledge.chunk.created",
+      quantity: source.chunkCount,
+      unit: "count",
+      metadata: {
+        sourceId: source.id,
+        sourceType: KnowledgeSourceType.FAQ
+      },
+      idempotencyKey: `knowledge-chunks-created:${source.id}`
+    }
+  ])
 
   revalidatePath("/dashboard/knowledge")
   revalidatePath("/dashboard/avatars")
@@ -254,8 +283,36 @@ export async function createKnowledgeTextAction(
       }))
     })
 
-    return createdSource
+    return {
+      ...createdSource,
+      chunkCount: chunks.length
+    }
   })
+
+  await recordUsageEvents([
+    {
+      workspaceId: context.workspace.id,
+      eventType: "knowledge.source.created",
+      quantity: 1,
+      unit: "count",
+      metadata: {
+        sourceId: source.id,
+        sourceType: KnowledgeSourceType.TEXT
+      },
+      idempotencyKey: `knowledge-source-created:${source.id}`
+    },
+    {
+      workspaceId: context.workspace.id,
+      eventType: "knowledge.chunk.created",
+      quantity: source.chunkCount,
+      unit: "count",
+      metadata: {
+        sourceId: source.id,
+        sourceType: KnowledgeSourceType.TEXT
+      },
+      idempotencyKey: `knowledge-chunks-created:${source.id}`
+    }
+  ])
 
   revalidatePath("/dashboard/knowledge")
   revalidatePath("/dashboard/avatars")

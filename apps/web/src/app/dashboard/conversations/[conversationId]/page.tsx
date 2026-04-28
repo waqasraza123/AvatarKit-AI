@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { ConversationStatus } from "@prisma/client"
+import { ConversationStatus, SafetyEventStatus } from "@prisma/client"
 import {
   canManageConversation,
   conversationActionLabel,
@@ -12,10 +12,20 @@ import {
 } from "@/lib/conversation"
 import { leadSourceLabel, leadStatusLabel } from "@/lib/lead"
 import { markConversationStatusAction } from "@/app/actions/conversations"
+import {
+  updateSafetyEventStatusAction
+} from "@/app/actions/safety"
+import { markMessageAsKnowledgeGapAction } from "@/app/actions/knowledge-gaps"
 import { getWorkspaceContextForRequest } from "@/lib/workspace"
+import {
+  canReviewSafetyEvents,
+  fetchConversationSafetyEvents,
+  safetyLabel,
+  type SafetyEventListItem
+} from "@/lib/safety"
 
 type PageParams = Promise<{ conversationId: string }>
-type SearchParams = Promise<{ workspaceId?: string; statusError?: string }>
+type SearchParams = Promise<{ workspaceId?: string; statusError?: string; gapMarked?: string; gapError?: string }>
 
 function mapStatusMessage(error: string | undefined): string | null {
   if (error === "bad_request") {
@@ -32,6 +42,26 @@ function mapStatusMessage(error: string | undefined): string | null {
 
   if (error === "transition_not_allowed") {
     return "That conversation status change is not allowed."
+  }
+
+  return null
+}
+
+function mapGapMessage(error: string | undefined, marked: string | undefined): { tone: "success" | "error"; message: string } | null {
+  if (marked === "1") {
+    return { tone: "success", message: "Knowledge gap was created or updated for this message." }
+  }
+
+  if (error === "permission_denied") {
+    return { tone: "error", message: "You do not have permission to mark knowledge gaps." }
+  }
+
+  if (error === "missing_message") {
+    return { tone: "error", message: "The selected message was not found in this workspace." }
+  }
+
+  if (error) {
+    return { tone: "error", message: "Could not mark this message as a knowledge gap." }
   }
 
   return null
@@ -57,6 +87,9 @@ function parseMetadataLines(metadata: Record<string, unknown> | null): string[] 
   const handoffDecision = metadata.handoffDecision
   const leadCaptureDecision = metadata.leadCaptureDecision
   const safetyReason = metadata.safetyReason
+  const safetyEventCount = metadata.safetyEventCount
+  const safetyAction = metadata.safetyAction
+  const safetyFallbackUsed = metadata.safetyFallbackUsed
   const runtimeStatus = metadata.runtimeStatus
   const intent = metadata.intent
   const confidence = metadata.confidence
@@ -107,6 +140,18 @@ function parseMetadataLines(metadata: Record<string, unknown> | null): string[] 
 
   if (typeof safetyReason === "string" && safetyReason.trim()) {
     lines.push(`safety: ${safetyReason}`)
+  }
+
+  if (typeof safetyEventCount === "number" && safetyEventCount > 0) {
+    lines.push(`safety events: ${safetyEventCount}`)
+  }
+
+  if (typeof safetyAction === "string" && safetyAction.trim()) {
+    lines.push(`safety action: ${safetyAction}`)
+  }
+
+  if (safetyFallbackUsed === true) {
+    lines.push("safety fallback used")
   }
 
   if (typeof intent === "string" && intent.trim()) {
@@ -232,6 +277,31 @@ function ConversationStatusActions({
   )
 }
 
+function MarkKnowledgeGapForm({
+  messageId,
+  conversationId,
+  canManage
+}: {
+  messageId: string
+  conversationId: string
+  canManage: boolean
+}) {
+  if (!canManage) {
+    return null
+  }
+
+  return (
+    <form action={markMessageAsKnowledgeGapAction} className="inline-action-form">
+      <input type="hidden" name="messageId" value={messageId} />
+      <input type="hidden" name="returnPath" value={`/dashboard/conversations/${conversationId}`} />
+      <input type="text" name="note" placeholder="Optional note" maxLength={240} aria-label="Knowledge gap note" />
+      <button className="avatarkit-button avatarkit-button-secondary" type="submit">
+        Mark as knowledge gap
+      </button>
+    </form>
+  )
+}
+
 function TraceSection({
   traces
 }: {
@@ -289,6 +359,80 @@ function TraceSection({
   )
 }
 
+function SafetySection({
+  events,
+  canReview,
+  conversationId
+}: {
+  events: SafetyEventListItem[]
+  canReview: boolean
+  conversationId: string
+}) {
+  if (events.length === 0) {
+    return (
+      <section className="content-card">
+        <h2>Safety events</h2>
+        <p className="form-helper">No safety events are linked to this conversation.</p>
+      </section>
+    )
+  }
+
+  const returnPath = `/dashboard/conversations/${conversationId}`
+
+  return (
+    <section className="content-card">
+      <div className="content-card-header">
+        <div>
+          <p className="eyebrow">Safety events</p>
+          <h2>Conversation safety</h2>
+        </div>
+        <Link className="avatarkit-link-button" href="/dashboard/safety">
+          Open safety dashboard
+        </Link>
+      </div>
+      <div className="conversation-trace-list">
+        {events.map(event => (
+          <article className="conversation-trace-item" key={event.id}>
+            <div className="conversation-trace-header">
+              <div>
+                <p className="eyebrow">{safetyLabel(event.eventType)}</p>
+                <p className={event.severity === "HIGH" || event.severity === "CRITICAL" ? "conversation-trace-status-failed" : "conversation-trace-status-neutral"}>
+                  {event.severity} · {event.action}
+                </p>
+              </div>
+              <div className="conversation-trace-meta">
+                <span>{safetyLabel(event.source)}</span>
+                <span>{event.status}</span>
+                <span>{event.createdAt}</span>
+              </div>
+            </div>
+            {event.reason ? <p className="conversation-preview-text">{event.reason}</p> : null}
+            <div className="conversation-trace-meta">
+              {event.messageId ? <span>message: {event.messageId.slice(0, 8)}</span> : null}
+              {event.inputExcerpt ? <span>input: {event.inputExcerpt}</span> : null}
+              {event.outputExcerpt ? <span>output: {event.outputExcerpt}</span> : null}
+            </div>
+            {canReview ? (
+              <div className="conversation-row-actions">
+                {[SafetyEventStatus.REVIEWED, SafetyEventStatus.RESOLVED, SafetyEventStatus.DISMISSED].filter(status => status !== event.status).map(status => (
+                  <form action={updateSafetyEventStatusAction} key={`${event.id}-${status}`}>
+                    <input type="hidden" name="safetyEventId" value={event.id} />
+                    <input type="hidden" name="targetStatus" value={status} />
+                    <input type="hidden" name="returnPath" value={returnPath} />
+                    <button className="avatarkit-button avatarkit-button-secondary" type="submit">
+                      Mark {safetyLabel(status).toLowerCase()}
+                    </button>
+                  </form>
+                ))}
+              </div>
+            ) : null}
+          </article>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 export default async function ConversationDetailPage({
   params,
   searchParams
@@ -296,7 +440,7 @@ export default async function ConversationDetailPage({
   params: PageParams
   searchParams: SearchParams
 }) {
-  const [{ conversationId }, { workspaceId, statusError }] = await Promise.all([params, searchParams])
+  const [{ conversationId }, { workspaceId, statusError, gapMarked, gapError }] = await Promise.all([params, searchParams])
   const context = await getWorkspaceContextForRequest({
     requestedWorkspaceId: workspaceId,
     nextPath: `/dashboard/conversations/${conversationId}`
@@ -305,13 +449,18 @@ export default async function ConversationDetailPage({
     return null
   }
 
-  const conversation = await fetchConversationDetail(context.workspace.id, conversationId)
+  const [conversation, safetyEvents] = await Promise.all([
+    fetchConversationDetail(context.workspace.id, conversationId),
+    fetchConversationSafetyEvents(context.workspace.id, conversationId)
+  ])
   if (!conversation) {
     redirect("/dashboard/conversations")
   }
 
   const canManage = canManageConversation(context.workspaceMembership.role)
+  const canReviewSafety = canReviewSafetyEvents(context.workspaceMembership.role)
   const statusErrorMessage = mapStatusMessage(statusError)
+  const gapMessage = mapGapMessage(gapError, gapMarked)
 
   return (
     <main className="content-area">
@@ -344,6 +493,9 @@ export default async function ConversationDetailPage({
           canManage={canManage}
         />
         {statusErrorMessage ? <p className="form-error">{statusErrorMessage}</p> : null}
+        {gapMessage ? (
+          <p className={gapMessage.tone === "success" ? "form-success" : "form-error"}>{gapMessage.message}</p>
+        ) : null}
       </section>
 
       {conversation.lead ? (
@@ -426,12 +578,24 @@ export default async function ConversationDetailPage({
                       </span>
                     ))}
                   </div>
+                  <div className="conversation-row-actions">
+                    <MarkKnowledgeGapForm
+                      messageId={message.id}
+                      conversationId={conversation.id}
+                      canManage={canManage}
+                    />
+                  </div>
                 </article>
               )
             })}
           </div>
         )}
       </section>
+      <SafetySection
+        events={safetyEvents}
+        canReview={canReviewSafety}
+        conversationId={conversation.id}
+      />
       <TraceSection traces={conversation.runtimeTraces} />
     </main>
   )

@@ -17,6 +17,8 @@ model User {
   sessions               Session[]
   memberships            WorkspaceMember[]
   acceptedConsentRecords ConsentRecord[]
+  reviewedSafetyEvents   SafetyEvent[]
+  resolvedKnowledgeGaps  KnowledgeGap[]
 }
 
 model Workspace {
@@ -33,6 +35,10 @@ model Workspace {
   knowledgeChunks  KnowledgeChunk[]
   widgetSettings  WidgetSettings[]
   allowedDomains  AllowedDomain[]
+  usageEvents     UsageEvent[]
+  safetyEvents    SafetyEvent[]
+  knowledgeGaps   KnowledgeGap[]
+  realtimeSessions RealtimeSession[]
 }
 
 model Avatar {
@@ -63,6 +69,11 @@ model Avatar {
   consentRecords  ConsentRecord[]
   widgetSettings  WidgetSettings[]
   leads           Lead[]
+  conversations   Conversation[]
+  usageEvents     UsageEvent[]
+  safetyEvents    SafetyEvent[]
+  knowledgeGaps   KnowledgeGap[]
+  realtimeSessions RealtimeSession[]
 
   @@index([workspaceId])
   @@index([voiceId])
@@ -204,6 +215,10 @@ model Conversation {
   messages Message[]
   runtimeTraces RuntimeTrace[]
   lead Lead?
+  usageEvents UsageEvent[]
+  safetyEvents SafetyEvent[]
+  knowledgeGaps KnowledgeGap[]
+  realtimeSessions RealtimeSession[]
 
   @@index([workspaceId])
   @@index([avatarId])
@@ -224,6 +239,9 @@ model Message {
   createdAt DateTime @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  usageEvents UsageEvent[]
+  safetyEvents SafetyEvent[]
+  knowledgeGaps KnowledgeGap[]
 
   @@index([conversationId])
   @@index([role])
@@ -277,6 +295,141 @@ model RuntimeTrace {
   @@index([eventType])
   @@index([status])
   @@index([createdAt])
+}
+
+model UsageEvent {
+  id                String   @id @default(cuid())
+  workspaceId       String
+  avatarId          String?
+  conversationId    String?
+  messageId         String?
+  eventType         String
+  quantity          Float
+  unit              String
+  provider          String?
+  costEstimateCents Float?
+  metadata          Json?
+  idempotencyKey    String?  @unique
+  createdAt         DateTime @default(now())
+
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  avatar       Avatar?       @relation(fields: [avatarId], references: [id], onDelete: SetNull)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  message      Message?      @relation(fields: [messageId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@index([avatarId])
+  @@index([conversationId])
+  @@index([messageId])
+  @@index([eventType])
+  @@index([unit])
+  @@index([createdAt])
+  @@index([workspaceId, eventType, createdAt])
+}
+
+model SafetyEvent {
+  id                 String            @id @default(cuid())
+  workspaceId        String
+  avatarId           String?
+  conversationId     String?
+  messageId          String?
+  eventType          SafetyEventType
+  severity           SafetySeverity
+  status             SafetyEventStatus @default(OPEN)
+  action             SafetyAction
+  source             SafetySource
+  inputExcerpt       String?
+  outputExcerpt      String?
+  reason             String?
+  metadata           Json?
+  createdAt          DateTime          @default(now())
+  reviewedAt         DateTime?
+  reviewedByUserId   String?
+
+  workspace        Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  avatar           Avatar?       @relation(fields: [avatarId], references: [id], onDelete: SetNull)
+  conversation     Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  message          Message?      @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  reviewedByUser   User?         @relation(fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@index([avatarId])
+  @@index([conversationId])
+  @@index([messageId])
+  @@index([eventType])
+  @@index([severity])
+  @@index([status])
+  @@index([source])
+  @@index([createdAt])
+  @@index([workspaceId, status, createdAt])
+}
+
+model KnowledgeGap {
+  id               String             @id @default(cuid())
+  workspaceId      String
+  avatarId         String?
+  conversationId   String?
+  messageId        String?
+  question         String
+  normalizedQuestion String?
+  reason           KnowledgeGapReason
+  status           KnowledgeGapStatus @default(NEW)
+  frequency        Int                @default(1)
+  lastAskedAt      DateTime           @default(now())
+  suggestedAnswer  String?
+  source           KnowledgeGapSource
+  metadata         Json?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  resolvedAt       DateTime?
+  resolvedByUserId String?
+
+  workspace      Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  avatar         Avatar?       @relation(fields: [avatarId], references: [id], onDelete: SetNull)
+  conversation   Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  message        Message?      @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  resolvedByUser User?         @relation(fields: [resolvedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@index([avatarId])
+  @@index([conversationId])
+  @@index([messageId])
+  @@index([reason])
+  @@index([status])
+  @@index([source])
+  @@index([lastAskedAt])
+  @@index([workspaceId, status, lastAskedAt])
+  @@index([workspaceId, avatarId, normalizedQuestion, status])
+}
+
+model RealtimeSession {
+  id             String                @id @default(cuid())
+  workspaceId    String
+  avatarId       String
+  conversationId String?
+  channel        RealtimeSessionChannel
+  status         RealtimeSessionStatus @default(STARTING)
+  visitorId      String?
+  startedAt      DateTime              @default(now())
+  endedAt        DateTime?
+  lastEventAt    DateTime?
+  metadata       Json?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  avatar       Avatar        @relation(fields: [avatarId], references: [id], onDelete: Cascade)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@index([avatarId])
+  @@index([conversationId])
+  @@index([channel])
+  @@index([status])
+  @@index([visitorId])
+  @@index([startedAt])
+  @@index([lastEventAt])
+  @@index([workspaceId, status, lastEventAt])
 }
 
 model ConsentRecord {
@@ -435,6 +588,94 @@ enum RuntimeTraceStatus {
   SUCCESS
   FAILURE
   SKIPPED
+}
+
+enum SafetyEventType {
+  unsafe_user_input
+  unsafe_avatar_instruction
+  unsupported_medical_request
+  unsupported_legal_request
+  unsupported_financial_request
+  impersonation_risk
+  public_figure_risk
+  fake_endorsement_risk
+  abusive_message
+  prompt_injection_attempt
+  generated_answer_blocked
+  generated_answer_rewritten
+  handoff_forced
+  lead_input_flagged
+  consent_required
+  avatar_suspended
+}
+
+enum SafetySeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum SafetyEventStatus {
+  OPEN
+  REVIEWED
+  DISMISSED
+  RESOLVED
+}
+
+enum SafetyAction {
+  ALLOW
+  WARN
+  REWRITE
+  REFUSE
+  HANDOFF
+  BLOCK
+  SUSPEND_AVATAR
+}
+
+enum SafetySource {
+  AVATAR_SETUP
+  DASHBOARD_PREVIEW
+  WIDGET_RUNTIME
+  LEAD_CAPTURE
+  SYSTEM
+}
+
+enum KnowledgeGapStatus {
+  NEW
+  IN_REVIEW
+  RESOLVED
+  IGNORED
+}
+
+enum KnowledgeGapReason {
+  LOW_RETRIEVAL_CONFIDENCE
+  NO_RELEVANT_KNOWLEDGE
+  FALLBACK_USED
+  USER_REPEATED_QUESTION
+  SAFETY_HANDOFF
+  OPERATOR_MARKED_POOR
+  UNKNOWN
+}
+
+enum KnowledgeGapSource {
+  DASHBOARD_PREVIEW
+  WIDGET_RUNTIME
+  SYSTEM
+}
+
+enum RealtimeSessionChannel {
+  DASHBOARD_PREVIEW
+  WIDGET
+  API
+}
+
+enum RealtimeSessionStatus {
+  STARTING
+  ACTIVE
+  ENDED
+  FAILED
+  EXPIRED
 }
 
 enum KnowledgeSourceType {

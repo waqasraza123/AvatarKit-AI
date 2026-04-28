@@ -62,7 +62,8 @@ class TtsProvider(ABC):
 def _character_usage(text: str) -> Dict[str, Any]:
     return {
         "characters": len(text),
-        "requests": 1
+        "requests": 1,
+        "estimated": False
     }
 
 

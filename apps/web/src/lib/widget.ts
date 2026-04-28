@@ -5,8 +5,10 @@ import {
   AvatarStatus,
   ConversationChannel,
   ConversationStatus,
+  KnowledgeGapSource,
   MessageRole,
   RuntimeTraceStatus,
+  SafetySource,
   WidgetPosition,
   WidgetTheme,
   type Prisma
@@ -33,6 +35,14 @@ import {
 import { isVoiceLanguageCompatible } from "@/lib/avatar-voice-shared"
 import { fetchRelevantKnowledgeChunksForPreview } from "@/lib/avatar-runtime-retrieval"
 import { sendRuntimeTextMessage, type RuntimeLeadCapture, type RuntimeResponse } from "@/lib/avatar-runtime-client"
+import {
+  buildConversationMessageUsageEvent,
+  buildRuntimeResponseUsageEvents,
+  recordUsageEvent,
+  recordUsageEvents
+} from "@/lib/usage"
+import { recordRuntimeSafetyEvents } from "@/lib/safety"
+import { recordRuntimeKnowledgeGap } from "@/lib/knowledge-gap"
 
 export const WIDGET_THEMES = ["light"] as const
 export const WIDGET_POSITIONS = ["bottom-right", "bottom-left"] as const
@@ -500,12 +510,127 @@ async function createRuntimeTrace(params: {
   }
 }
 
+async function persistWidgetRuntimeSafetyState(params: {
+  workspaceId: string
+  avatarId: string
+  conversationId: string
+  inputMessageId: string
+  outputMessageId: string
+  inputText: string
+  outputText: string
+  runtimeResponse: RuntimeResponse
+}): Promise<void> {
+  const safetyEvents = params.runtimeResponse.safetyEvents ?? []
+  await createRuntimeTrace({
+    workspaceId: params.workspaceId,
+    avatarId: params.avatarId,
+    conversationId: params.conversationId,
+    eventType: "safety.pre_check.started",
+    status: RuntimeTraceStatus.STARTED
+  })
+  await createRuntimeTrace({
+    workspaceId: params.workspaceId,
+    avatarId: params.avatarId,
+    conversationId: params.conversationId,
+    eventType: "safety.pre_check.completed",
+    status: RuntimeTraceStatus.SUCCESS,
+    metadata: {
+      safetyEventCount: safetyEvents.length,
+      status: params.runtimeResponse.status
+    }
+  })
+  await createRuntimeTrace({
+    workspaceId: params.workspaceId,
+    avatarId: params.avatarId,
+    conversationId: params.conversationId,
+    eventType: "safety.post_check.started",
+    status: RuntimeTraceStatus.STARTED
+  })
+  await createRuntimeTrace({
+    workspaceId: params.workspaceId,
+    avatarId: params.avatarId,
+    conversationId: params.conversationId,
+    eventType: "safety.post_check.completed",
+    status: RuntimeTraceStatus.SUCCESS,
+    metadata: {
+      rewritten: safetyEvents.some(event => event.action === "REWRITE"),
+      blocked: params.runtimeResponse.status === "blocked",
+      handoffDecision: params.runtimeResponse.handoffDecision
+    }
+  })
+
+  if (params.runtimeResponse.status === "blocked" || safetyEvents.some(event => event.action === "BLOCK" || event.action === "REFUSE")) {
+    await createRuntimeTrace({
+      workspaceId: params.workspaceId,
+      avatarId: params.avatarId,
+      conversationId: params.conversationId,
+      eventType: "safety.blocked",
+      status: RuntimeTraceStatus.SUCCESS,
+      metadata: {
+        reason: params.runtimeResponse.safetyReason ?? null
+      }
+    })
+  }
+
+  if (safetyEvents.some(event => event.action === "REWRITE")) {
+    await createRuntimeTrace({
+      workspaceId: params.workspaceId,
+      avatarId: params.avatarId,
+      conversationId: params.conversationId,
+      eventType: "safety.rewritten",
+      status: RuntimeTraceStatus.SUCCESS,
+      metadata: {
+        reason: params.runtimeResponse.safetyReason ?? null
+      }
+    })
+  }
+
+  if (params.runtimeResponse.handoffDecision === "request" && safetyEvents.some(event => event.handoffRequired)) {
+    await createRuntimeTrace({
+      workspaceId: params.workspaceId,
+      avatarId: params.avatarId,
+      conversationId: params.conversationId,
+      eventType: "safety.handoff_forced",
+      status: RuntimeTraceStatus.SUCCESS,
+      metadata: {
+        reason: params.runtimeResponse.safetyReason ?? null
+      }
+    })
+  }
+
+  const persistedCount = await recordRuntimeSafetyEvents({
+    workspaceId: params.workspaceId,
+    avatarId: params.avatarId,
+    conversationId: params.conversationId,
+    inputMessageId: params.inputMessageId,
+    outputMessageId: params.outputMessageId,
+    source: SafetySource.WIDGET_RUNTIME,
+    inputText: params.inputText,
+    outputText: params.outputText,
+    safetyEvents
+  })
+
+  if (safetyEvents.length > 0) {
+    await createRuntimeTrace({
+      workspaceId: params.workspaceId,
+      avatarId: params.avatarId,
+      conversationId: params.conversationId,
+      eventType: persistedCount === safetyEvents.length ? "safety.event.persisted" : "safety.event_failed",
+      status: persistedCount === safetyEvents.length ? RuntimeTraceStatus.SUCCESS : RuntimeTraceStatus.FAILURE,
+      metadata: {
+        attemptedCount: safetyEvents.length,
+        persistedCount
+      }
+    })
+  }
+}
+
 async function resolveWidgetConversation(params: {
   workspaceId: string
   avatarId: string
   conversationId: string
   visitorId: string
-}) {
+}): Promise<{ id: string; created: boolean }> {
   if (params.conversationId) {
     const existing = await prisma.conversation.findFirst({
       where: {
@@ -519,7 +644,7 @@ async function resolveWidgetConversation(params: {
     })
 
     if (existing) {
-      return existing
+      return { id: existing.id, created: false }
     }
   }
 
@@ -536,10 +661,10 @@ async function resolveWidgetConversation(params: {
   })
 
   if (visitorConversation) {
-    return visitorConversation
+    return { id: visitorConversation.id, created: false }
   }
 
-  return prisma.conversation.create({
+  const created = await prisma.conversation.create({
     data: {
       workspaceId: params.workspaceId,
       avatarId: params.avatarId,
@@ -549,6 +674,8 @@ async function resolveWidgetConversation(params: {
     },
     select: { id: true }
   })
+
+  return { id: created.id, created: true }
 }
 
 function buildPublicMediaUrl(messageId: string, token: string, kind: "audio" | "video"): string {
@@ -642,6 +769,22 @@ async function persistWidgetRuntimeMedia(params: {
             validationIssues: []
           }
         })
+        await recordUsageEvent({
+          workspaceId: params.workspaceId,
+          avatarId: params.avatarId,
+          conversationId: params.conversationId,
+          messageId: null,
+          eventType: "storage.bytes.uploaded",
+          quantity: audioBytes.byteLength,
+          unit: "bytes",
+          metadata: {
+            assetId: createdAudioAssetId,
+            assetType: AvatarAssetType.GENERATED_SPEECH_AUDIO,
+            mimeType: params.runtimeResponse.audio.mimeType,
+            source: "widget_generated_audio"
+          },
+          idempotencyKey: `storage-upload:${createdAudioAssetId}`
+        })
         audioAssetId = createdAudioAssetId
         audioUrl = buildPublicMediaUrl(params.avatarMessageId, params.publicMediaToken, "audio")
         await createRuntimeTrace({
@@ -731,6 +874,22 @@ async function persistWidgetRuntimeMedia(params: {
               validationStatus: AvatarAssetValidationStatus.VALID,
               validationIssues: []
             }
+          })
+          await recordUsageEvent({
+            workspaceId: params.workspaceId,
+            avatarId: params.avatarId,
+            conversationId: params.conversationId,
+            messageId: null,
+            eventType: "storage.bytes.uploaded",
+            quantity: videoBytes.byteLength,
+            unit: "bytes",
+            metadata: {
+              assetId: createdVideoAssetId,
+              assetType: AvatarAssetType.GENERATED_AVATAR_VIDEO,
+              mimeType: videoMimeType,
+              source: "widget_generated_video"
+            },
+            idempotencyKey: `storage-upload:${createdVideoAssetId}`
           })
           videoAssetId = createdVideoAssetId
           videoUrl = buildPublicMediaUrl(params.avatarMessageId, params.publicMediaToken, "video")
@@ -849,6 +1008,22 @@ export async function processWidgetMessage(avatarId: string, request: Request, b
     visitorId
   })
 
+  if (targetConversation.created) {
+    await recordUsageEvent({
+      workspaceId: avatar.workspaceId,
+      avatarId: avatar.id,
+      conversationId: targetConversation.id,
+      eventType: "widget.session.started",
+      quantity: 1,
+      unit: "count",
+      metadata: {
+        visitorId,
+        domain: domainAccess.domain
+      },
+      idempotencyKey: `widget-session-started:${targetConversation.id}`
+    })
+  }
+
   await createRuntimeTrace({
     workspaceId: avatar.workspaceId,
     avatarId: avatar.id,
@@ -874,6 +1049,14 @@ export async function processWidgetMessage(avatarId: string, request: Request, b
       }
     }
   })
+  await recordUsageEvent(buildConversationMessageUsageEvent({
+    workspaceId: avatar.workspaceId,
+    avatarId: avatar.id,
+    conversationId: targetConversation.id,
+    messageId: visitorMessageId,
+    role: MessageRole.VISITOR,
+    channel: ConversationChannel.WIDGET
+  }))
 
   const visitorMessageCount = await prisma.message.count({
     where: {
@@ -999,7 +1182,8 @@ export async function processWidgetMessage(avatarId: string, request: Request, b
       },
       handoffDecision: "request",
       usage: { provider: "unknown" },
-      sourceReferences: []
+      sourceReferences: [],
+      safetyEvents: []
     }
   }
 
@@ -1072,11 +1256,52 @@ export async function processWidgetMessage(avatarId: string, request: Request, b
         leadCaptureDecision: runtimeResponse.leadCaptureDecision,
         leadCapture: runtimeResponse.leadCapture,
         safetyReason: runtimeResponse.safetyReason ?? null,
+        safetyEventCount: runtimeResponse.safetyEvents?.length ?? 0,
+        safetyAction: runtimeResponse.safetyEvents?.[0]?.action ?? null,
+        safetyFallbackUsed: runtimeResponse.status === "blocked" || runtimeResponse.safetyEvents?.some(event => event.action === "REWRITE") || false,
         sourceReferenceCount: runtimeResponse.sourceReferences.length,
         domain: domainAccess.domain
       }
     }
   })
+  await persistWidgetRuntimeSafetyState({
+    workspaceId: avatar.workspaceId,
+    avatarId: avatar.id,
+    conversationId: targetConversation.id,
+    inputMessageId: visitorMessageId,
+    outputMessageId: avatarMessageId,
+    inputText,
+    outputText: runtimeResponse.answer || "",
+    runtimeResponse
+  })
+  await recordRuntimeKnowledgeGap({
+    workspaceId: avatar.workspaceId,
+    avatarId: avatar.id,
+    conversationId: targetConversation.id,
+    messageId: visitorMessageId,
+    question: inputText,
+    source: KnowledgeGapSource.WIDGET_RUNTIME,
+    runtimeResponse
+  })
+  await recordUsageEvents([
+    buildConversationMessageUsageEvent({
+      workspaceId: avatar.workspaceId,
+      avatarId: avatar.id,
+      conversationId: targetConversation.id,
+      messageId: avatarMessageId,
+      role: MessageRole.AVATAR,
+      channel: ConversationChannel.WIDGET
+    }),
+    ...buildRuntimeResponseUsageEvents({
+      workspaceId: avatar.workspaceId,
+      avatarId: avatar.id,
+      conversationId: targetConversation.id,
+      inputMessageId: visitorMessageId,
+      outputMessageId: avatarMessageId,
+      inputType: "text",
+      outputMode
+    }, runtimeResponse)
+  ])
 
   await prisma.conversation.update({
     where: { id: targetConversation.id },

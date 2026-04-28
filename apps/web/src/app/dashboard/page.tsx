@@ -1,6 +1,7 @@
 import { DashboardPlaceholder } from "./_components/dashboard-placeholder"
 import Link from "next/link"
 import { fetchConversationOverview } from "@/lib/conversation"
+import { fetchUsageOverviewSummary, formatEstimatedCost, formatUsageNumber } from "@/lib/usage"
 import { getWorkspaceContextForRequest } from "@/lib/workspace"
 
 const moduleCards = [
@@ -38,7 +39,10 @@ export default async function DashboardPage({
     return null
   }
 
-  const conversationOverview = await fetchConversationOverview(context.workspace.id)
+  const [conversationOverview, usageOverview] = await Promise.all([
+    fetchConversationOverview(context.workspace.id),
+    fetchUsageOverviewSummary(context.workspace.id)
+  ])
 
   return (
     <main className="content-area">
@@ -99,6 +103,14 @@ export default async function DashboardPage({
             <span>{conversationOverview.totalLeads}</span>
             <p>Total leads</p>
           </div>
+          <div>
+            <span>{formatUsageNumber(usageOverview.currentMonthMessages)}</span>
+            <p>Usage messages this month</p>
+          </div>
+          <div>
+            <span>{formatEstimatedCost(usageOverview.currentMonthCostCents)}</span>
+            <p>Estimated ops cost this month</p>
+          </div>
         </div>
         <div className="avatar-card-actions conversation-overview-actions">
           <Link className="avatarkit-link-button" href="/dashboard/conversations">
@@ -106,6 +118,9 @@ export default async function DashboardPage({
           </Link>
           <Link className="avatarkit-link-button" href="/dashboard/leads">
             Open lead dashboard
+          </Link>
+          <Link className="avatarkit-link-button" href="/dashboard/usage">
+            Open usage dashboard
           </Link>
         </div>
         {conversationOverview.recentConversations.length === 0 ? (
@@ -128,6 +143,30 @@ export default async function DashboardPage({
                 <Link className="avatarkit-link-button" href={`/dashboard/conversations/${item.id}`}>
                   Open conversation
                 </Link>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+      <section className="content-card">
+        <h2>Recent usage activity</h2>
+        {usageOverview.recentActivity.length === 0 ? (
+          <p className="avatar-empty-state">
+            No usage events yet. Usage appears after previews, widget conversations, uploads, and knowledge creation.
+          </p>
+        ) : (
+          <div className="conversation-overview-list">
+            {usageOverview.recentActivity.map(event => (
+              <article className="conversation-overview-item" key={event.id}>
+                <p className="eyebrow">{event.eventType}</p>
+                <p>{event.avatarName ?? "Workspace event"}</p>
+                <p className="avatar-meta">
+                  {formatUsageNumber(event.quantity)} {event.unit} · {event.provider ?? "no provider"}
+                </p>
+                <p className="avatar-meta">
+                  Estimated cost {formatEstimatedCost(event.costEstimateCents ?? 0)}
+                </p>
+                <p>{event.createdAt}</p>
               </article>
             ))}
           </div>

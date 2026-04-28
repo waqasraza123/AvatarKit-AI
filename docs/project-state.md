@@ -40,6 +40,15 @@ auth, workspace isolation, dashboard shell, and future avatar/knowledge/runtime 
   - `MessageRole` enum
   - `RuntimeTrace`
   - `RuntimeTraceStatus` enum
+  - `UsageEvent`
+  - `SafetyEvent`
+  - `KnowledgeGap`
+  - `KnowledgeGapStatus` enum
+  - `KnowledgeGapReason` enum
+  - `KnowledgeGapSource` enum
+  - `RealtimeSession`
+  - `RealtimeSessionChannel` enum
+  - `RealtimeSessionStatus` enum
   - `Lead`
   - `LeadStatus` enum
   - `LeadSource` enum
@@ -57,7 +66,7 @@ auth, workspace isolation, dashboard shell, and future avatar/knowledge/runtime 
 
 ## Current Phase
 
-Phase 14 is now implemented pending manual approval: Voice Input v1.
+Phases 17 and 18 are now implemented pending manual approval: Knowledge Gap Detection and Realtime Streaming v1.
 
 ## Completed Major Slices
 
@@ -103,7 +112,7 @@ Phase 14 is now implemented pending manual approval: Voice Input v1.
 - Generated speech audio is stored through private avatar assets and linked from `Message.audioUrl`.
 - Avatar Studio Preview supports Text only and Text + audio modes with selected voice display, audio playback, and audio fallback state.
 - Conversation detail transcripts show audio players and audio metadata for avatar messages with audio.
-- TTS usage metadata is stored on message metadata for Phase 9 instead of adding billing/usage tables before the billing phase.
+- TTS usage metadata remains on message metadata from Phase 9 and is now also converted to `UsageEvent` records in Phase 15 flows.
 - Runtime traces include `tts.started`, `tts.completed`, `tts.failed`, `audio.stored`, and `audio.failed`.
 - Python avatar media provider abstraction supports `MOCK`, D-ID, Tavus placeholder, Simli placeholder, and self-hosted unavailable routing.
 - Runtime output modes now include `text`, `audio`, and `video`; video mode returns text plus optional audio and normalized video output/error metadata.
@@ -112,7 +121,7 @@ Phase 14 is now implemented pending manual approval: Voice Input v1.
 - Avatar Studio Preview supports Text + avatar video with visible video preconditions, source photo preview, selected voice display, video loading, video playback, and fallback messaging.
 - Conversation detail transcripts show video players and video response metadata for avatar messages with video.
 - Runtime traces include `avatar_video.started`, `avatar_video.completed`, `avatar_video.failed`, `video.stored`, and `video.failed`.
-- Video usage metadata is stored on message metadata for Phase 10 instead of adding billing/usage tables before the billing phase.
+- Video usage metadata remains on message metadata from Phase 10 and is now also converted to `UsageEvent` records in Phase 15 flows.
 - Avatar publish readiness is centralized in `apps/web/src/lib/avatar.ts`.
 - Publish readiness requires basics, valid current photo, consent for current photo, active voice, behavior, READY knowledge, successful preview, non-suspended avatar, and valid workspace context.
 - Avatar Studio Publish step is functional and shows completed/missing requirements, blocking issues, preview summary, and publish/unpublish actions.
@@ -138,6 +147,35 @@ Phase 14 is now implemented pending manual approval: Voice Input v1.
 - Conversation detail transcripts show voice input audio and STT metadata for visitor messages.
 - Runtime traces include `stt.started`, `stt.completed`, `stt.failed`, `audio_input.stored`, and `audio_input.failed`.
 - Widget microphone input is intentionally deferred; widget text/audio/video responses and lead capture remain unchanged.
+- First-class `UsageEvent` model now records workspace-scoped usage events with optional avatar, conversation, message, provider, cost estimate, metadata, and idempotency key associations.
+- Central TypeScript usage module records idempotency-safe usage events and keeps metering write failures from breaking safe primary flows.
+- Python runtime usage payloads now include exact provider token usage where available or deterministic estimates for LLM, STT, TTS, and avatar video usage.
+- Dashboard preview, widget, knowledge creation, source photo upload, voice input upload, and locally stored generated audio/video paths record Phase 15 usage events.
+- `/dashboard/usage` is a real workspace-scoped usage dashboard with period filtering, totals, per-avatar summaries, recent events, estimated operational cost, and non-blocking soft-limit warnings.
+- Dashboard overview includes current-month usage messages, estimated operational cost, and recent usage activity.
+- First-class `SafetyEvent` model now records workspace-scoped safety incidents with optional avatar, conversation, message, review, action, source, excerpt, reason, and metadata fields.
+- Central TypeScript safety policy module validates avatar behavior configuration, lead input, safety event persistence, dashboard filters, review actions, and manual avatar suspension.
+- Python runtime safety now returns structured Pydantic safety results for pre-check and post-check outcomes.
+- Runtime pre-check blocks or hands off obvious prompt injection, medical diagnosis/treatment, legal conclusion, financial guarantee, impersonation, public figure, fake endorsement, abusive, and harmful requests before provider generation.
+- Runtime post-check rewrites or refuses risky generated answers containing unsupported guarantees, definitive sensitive advice, unsafe instructions, or identity deception.
+- Dashboard preview text, dashboard preview voice input, and widget runtime flows persist returned safety events without breaking the primary response flow.
+- Lead capture flags or blocks suspicious/unsafe lead input and records safety events from the public lead boundary.
+- `/dashboard/safety` is a real workspace-scoped safety dashboard with filters, empty state, review actions, conversation links, and manual avatar suspension controls.
+- Conversation detail now shows linked safety events and message badges for safety fallback/rewrite states.
+- Runtime traces now include `safety.pre_check.*`, `safety.post_check.*`, `safety.blocked`, `safety.rewritten`, `safety.handoff_forced`, `safety.event.persisted`, and `safety.event_failed`.
+- First-class `KnowledgeGap` model now records workspace-scoped missing-knowledge questions with optional avatar, conversation, message, suggested answer, status, source, reason, frequency, metadata, and resolver fields.
+- Central TypeScript knowledge gap logic normalizes questions, dedupes unresolved gaps by workspace/avatar/normalized question, detects repeated same-conversation questions, and records non-billing `knowledge.gap.created` usage events.
+- Python runtime now returns explicit gap metadata: retrieval confidence, fallback usage, missing knowledge, handoff requirement, gap reason, and original question.
+- Dashboard preview and widget runtime flows persist knowledge gaps from trusted server-side runtime outcomes only.
+- Runtime provider failures are not treated as knowledge gaps unless missing knowledge is explicitly indicated.
+- Conversation detail allows `OWNER`, `ADMIN`, and `OPERATOR` to mark messages as knowledge gaps.
+- `/dashboard/knowledge/gaps` and `/dashboard/knowledge/gaps/[gapId]` are real review surfaces with filters, status actions, linked conversation/message context, and reviewed FAQ conversion.
+- Knowledge Base and Avatar Studio Knowledge step show unresolved gap summaries and links.
+- First-class `RealtimeSession` model now tracks workspace-scoped dashboard/widget realtime session lifecycle.
+- Realtime v1 uses TypeScript-managed Server-Sent Events and normal POST commands; Python remains private behind the existing service-token runtime endpoint.
+- Avatar Studio Preview keeps standard request/response mode and adds optional realtime mode with start/end, status, text message, final answer, media events, and errors.
+- Public widget runtime attempts realtime text sessions and falls back to existing request/response if realtime fails.
+- Runtime traces now include realtime session, message, event, fallback, expiry, and connection failure events.
 
 ## Important Decisions
 
@@ -181,17 +219,34 @@ Phase 14 is now implemented pending manual approval: Voice Input v1.
 - `MOCK` STT requires no external keys and uses `AI_RUNTIME_MOCK_STT_TRANSCRIPT` when configured.
 - Voice input accepts only `audio/webm`, `audio/mpeg`, `audio/wav`, and `audio/mp4`, with a 10MB size limit and 60 second duration limit.
 - Transcription failure does not create an empty visitor message.
+- Phase 15 usage events are server-side only; public widget clients cannot directly create arbitrary usage.
+- Usage idempotency keys prevent double-counting retried runtime, message, widget session, asset storage, and knowledge creation steps where a stable ID exists.
+- Usage recording failure is logged by the usage module and does not block preview, widget, knowledge, or storage flows when the primary operation can safely continue.
+- Phase 15 estimated cost values are approximate internal operational estimates only, not customer billing amounts.
+- Static Phase 15 soft limits only warn on `/dashboard/usage`; they do not block requests or trigger upgrades.
+- Provider-hosted video references are counted for video usage but do not record storage bytes because no stored byte size is available.
+- Phase 16 safety is rule-based and does not claim external moderation, legal compliance automation, KYC, public identity verification, face recognition, or celebrity detection.
+- Manual avatar suspension from safety context is restricted to `OWNER` and `ADMIN`; `OPERATOR` can review events but cannot suspend avatars.
+- `VIEWER` can view safety events but cannot update review status or suspend avatars.
+- Safety event recording failures are logged/traced where possible and do not crash preview, widget, or lead flows when the primary response can safely continue.
+- Knowledge gaps are not created directly by public clients and should not be created from abusive, prompt-injection, impersonation, public-figure, fake-endorsement, or sensitive medical/legal/financial requests that should not become business knowledge.
+- Phase 17 dedupe is deterministic normalized text matching only; embeddings and semantic clustering remain future work.
+- Gap-to-FAQ conversion requires reviewed answer text and never automatically publishes unreviewed AI output as knowledge.
+- Realtime v1 transport is SSE from TypeScript routes, not WebSocket/WebRTC.
+- Realtime v1 does not fake token streaming; it emits final answers and status events when partial output is unavailable.
+- Widget realtime must preserve published-avatar eligibility and allowed-domain checks.
+- Active realtime sessions expire after 30 minutes without recorded activity.
 
 ## Non-Negotiable Rules (still active)
 
 - Preserve existing architecture conventions and phase boundaries.
 - Do not add production logic for future phases ahead of their designated order.
 - Strong validation at request/action boundaries.
-- No future feature flows beyond Phase 14 voice input: no realtime streaming, continuous listening, partial transcripts, barge-in/interruption handling, full voice/video call UX, billing, public sharing, React SDK, inline widget voice input, kiosk mode, operator handoff, CRM sync, notifications, webhooks, analytics, 3D rendering, voice cloning, custom voice upload, or self-hosted avatar engine.
+- No future feature flows beyond Phase 18 realtime streaming v1: no Phase 19 public API/SDK, Stripe, checkout, subscriptions, invoices, payment methods, billing portal, hard usage blocking, paid plan upgrades, inline widget voice input upload, continuous listening, WebRTC avatar calls, barge-in/interruption handling, kiosk mode, operator handoff workflow, CRM sync, notifications, webhooks, 3D rendering, voice cloning, custom voice upload, public identity verification, KYC, biometric face recognition, external celebrity detection, or self-hosted avatar engine.
 
 ## Current Next Step
 
-Phase 14 implementation is pending manual approval in `docs/development.md`.
+Phases 17 and 18 implementation are pending manual approval in `docs/development.md`.
 
 ## Verification Commands (manual, user-run)
 
@@ -202,7 +257,16 @@ Phase 14 implementation is pending manual approval in `docs/development.md`.
 - `pnpm db:migrate`
 - `pnpm db:seed`
 - Set `AI_RUNTIME_STT_PROVIDER=MOCK`
+- Optional for video preview: set `AI_RUNTIME_MOCK_AVATAR_VIDEO_URL` to a playable mock video URL
 - `pnpm dev:web`
 - `pnpm dev:api`
 - `pnpm dev:ai-runtime`
 - Execute the manual verification paths listed in `docs/development.md`.
+- Additional suggested manual commands after Phases 17-18:
+  - `pnpm typecheck`
+  - `pnpm lint`
+  - `pnpm test`
+  - `pnpm prisma generate`
+  - `pnpm build`
+  - `python -m pytest`
+  - `python -m compileall services`

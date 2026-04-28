@@ -34,6 +34,34 @@ class RuntimeProvider(ABC):
         pass
 
 
+def _estimate_tokens(text: str) -> int:
+    normalized = " ".join(text.split())
+    if not normalized:
+        return 0
+
+    return max(1, round(len(normalized) / 4))
+
+
+def _estimated_token_usage(input_text: str, output_text: str) -> Dict[str, Any]:
+    input_tokens = _estimate_tokens(input_text)
+    output_tokens = _estimate_tokens(output_text)
+    return {
+        "inputTokens": input_tokens,
+        "outputTokens": output_tokens,
+        "totalTokens": input_tokens + output_tokens,
+        "estimated": True
+    }
+
+
+def _actual_token_usage(input_tokens: int, output_tokens: int) -> Dict[str, Any]:
+    return {
+        "inputTokens": input_tokens,
+        "outputTokens": output_tokens,
+        "totalTokens": input_tokens + output_tokens,
+        "estimated": False
+    }
+
+
 class MockProvider(RuntimeProvider):
     @property
     def name(self) -> str:
@@ -58,7 +86,11 @@ class MockProvider(RuntimeProvider):
                 usage={
                     "provider": "MOCK",
                     "mockFallbackUsed": True,
-                    "reason": "missing_knowledge"
+                    "reason": "missing_knowledge",
+                    "tokens": _estimated_token_usage(
+                        f"{profile_summary}\n{prompt}\n{context}",
+                        answer
+                    )
                 }
             )
 
@@ -73,14 +105,20 @@ class MockProvider(RuntimeProvider):
                 "business-safe response."
             )
 
+        final_answer = (
+            f"{answer} I will stay within the provided context and avoid definitive legal, medical, or "
+            f"financial advice."
+        )
+
         return ProviderOutput(
-            answer=(
-                f"{answer} I will stay within the provided context and avoid definitive legal, medical, or "
-                f"financial advice."
-            ),
+            answer=final_answer,
             usage={
                 "provider": "MOCK",
-                "mockFallbackUsed": True
+                "mockFallbackUsed": True,
+                "tokens": _estimated_token_usage(
+                    f"{profile_summary}\n{prompt}\n{context}",
+                    final_answer
+                )
             }
         )
 
@@ -143,11 +181,19 @@ class OpenAIProvider(RuntimeProvider):
             "mockFallbackUsed": False
         }
         if usage is not None:
+            prompt_tokens = int(usage.prompt_tokens)
+            completion_tokens = int(usage.completion_tokens)
             usage_payload["tokens"] = {
-                "promptTokens": usage.prompt_tokens,
-                "completionTokens": usage.completion_tokens,
-                "totalTokens": usage.total_tokens
+                **_actual_token_usage(prompt_tokens, completion_tokens),
+                "promptTokens": prompt_tokens,
+                "completionTokens": completion_tokens,
+                "providerTotalTokens": int(usage.total_tokens)
             }
+        else:
+            usage_payload["tokens"] = _estimated_token_usage(
+                f"{profile_summary}\n{prompt}\n{context}",
+                answer
+            )
 
         return ProviderOutput(answer=answer, usage=usage_payload)
 
@@ -195,11 +241,24 @@ class AnthropicProvider(RuntimeProvider):
             if message.content and hasattr(message.content[0], "text")
             else fallback_message
         )
+        usage = getattr(message, "usage", None)
+        input_tokens = getattr(usage, "input_tokens", None) if usage else None
+        output_tokens = getattr(usage, "output_tokens", None) if usage else None
+        token_usage = (
+            _actual_token_usage(int(input_tokens), int(output_tokens))
+            if isinstance(input_tokens, int) and isinstance(output_tokens, int)
+            else _estimated_token_usage(
+                f"{profile_summary}\n{prompt}\n{context}",
+                answer
+            )
+        )
+
         return ProviderOutput(
             answer=answer.strip(),
             usage={
                 "provider": "ANTHROPIC",
-                "mockFallbackUsed": False
+                "mockFallbackUsed": False,
+                "tokens": token_usage
             }
         )
 

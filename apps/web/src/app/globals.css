@@ -296,6 +296,13 @@ input[type="password"] {
   margin: 0;
 }
 
+.content-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
 .section-subtitle {
   margin-bottom: 10px;
 }
@@ -523,7 +530,14 @@ input[type="password"] {
   grid-template-columns: repeat(6, minmax(120px, 1fr));
 }
 
-.conversation-filter-row label {
+.safety-filter-row {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(5, minmax(130px, 1fr));
+}
+
+.conversation-filter-row label,
+.safety-filter-row label {
   display: grid;
   gap: 6px;
   color: #22304a;
@@ -531,7 +545,8 @@ input[type="password"] {
 }
 
 .conversation-filter-row select,
-.conversation-filter-row input {
+.conversation-filter-row input,
+.safety-filter-row select {
   border: 1px solid var(--panel-border);
   border-radius: 8px;
   background: #ffffff;
@@ -640,6 +655,10 @@ input[type="password"] {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.safety-inline-form {
+  margin-top: 10px;
 }
 
 .studio-step-summary {
@@ -891,7 +910,7 @@ input[type="password"] {
 .knowledge-summary-grid {
   margin-top: 18px;
   display: grid;
-  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 12px;
 }
 
@@ -1192,6 +1211,13 @@ input[type="password"] {
 .preview-conversation {
   display: grid;
   gap: 10px;
+}
+
+.realtime-preview-panel {
+  border: 1px solid rgba(53, 92, 255, 0.18);
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 12px;
 }
 
 .preview-composer textarea {
@@ -1782,6 +1808,130 @@ select {
   color: #1d3f8c;
 }
 
+.usage-period-filter {
+  margin-top: 18px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+}
+
+.usage-period-filter label {
+  display: grid;
+  gap: 6px;
+  min-width: 180px;
+  color: #22304a;
+  font-weight: 700;
+}
+
+.usage-period-filter select {
+  min-height: 40px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 0 12px;
+  font: inherit;
+}
+
+.usage-billing-note {
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  background: #eff6ff;
+  padding: 12px;
+  display: grid;
+  gap: 4px;
+  min-width: 180px;
+}
+
+.usage-billing-note strong {
+  color: var(--primary-strong);
+}
+
+.usage-billing-note span {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.usage-summary-grid {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.usage-metric {
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  background: #f8fbff;
+  padding: 14px;
+  display: grid;
+  gap: 6px;
+}
+
+.usage-metric span {
+  color: #1a2a4d;
+  font-size: 1.45rem;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.usage-metric p,
+.usage-metric small,
+.usage-empty-state p {
+  margin: 0;
+}
+
+.usage-metric p {
+  color: #22304a;
+  font-weight: 700;
+}
+
+.usage-metric small {
+  color: var(--muted);
+}
+
+.usage-warning-list {
+  margin-top: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.usage-table-wrap {
+  margin-top: 14px;
+  overflow-x: auto;
+}
+
+.usage-table {
+  width: 100%;
+  min-width: 860px;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.usage-table th,
+.usage-table td {
+  border-bottom: 1px solid var(--panel-border);
+  padding: 12px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.usage-table th {
+  color: #22304a;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.usage-table td {
+  color: #30405a;
+}
+
+.usage-empty-state {
+  display: grid;
+  gap: 10px;
+}
+
 .placeholder-block {
   border-top: 1px solid var(--panel-border);
   padding-top: 14px;
@@ -1840,6 +1990,7 @@ select {
   .knowledge-summary-grid,
   .knowledge-placeholder-grid,
   .conversation-filter-row,
+  .safety-filter-row,
   .conversation-summary-grid,
   .lead-detail-grid,
   .conversation-overview-list,
@@ -1848,7 +1999,8 @@ select {
   .embed-status-grid,
   .embed-avatar-grid,
   .embed-management-grid,
-  .embed-avatar-media {
+  .embed-avatar-media,
+  .usage-summary-grid {
     grid-template-columns: 1fr;
   }
 

@@ -1,10 +1,15 @@
 import Link from "next/link"
 import type { KnowledgeSummary } from "@/lib/knowledge-shared"
+import type { KnowledgeGapSummary } from "@/lib/knowledge-gap"
 
 export default function AvatarKnowledgePanel({
-  summary
+  summary,
+  gapSummary,
+  avatarId
 }: {
   summary: KnowledgeSummary
+  gapSummary: KnowledgeGapSummary
+  avatarId: string
 }) {
   const hasReadyKnowledge = summary.readySourceCount > 0
 
@@ -13,8 +18,8 @@ export default function AvatarKnowledgePanel({
       <div>
         <h3>Knowledge</h3>
         <p className="avatar-step-description">
-          Workspace knowledge is the business-approved source of truth future avatar answers will use.
-          In Phase 6, this avatar will use all READY workspace knowledge when runtime grounding arrives.
+          Workspace knowledge is the business-approved source of truth avatar answers use.
+          This avatar uses READY workspace knowledge during runtime grounding.
         </p>
       </div>
       <div className="knowledge-summary-grid">
@@ -34,6 +39,18 @@ export default function AvatarKnowledgePanel({
           <span>{summary.archivedSourceCount}</span>
           <p>Archived sources</p>
         </div>
+        <div>
+          <span>{gapSummary.unresolvedCount}</span>
+          <p>Unresolved gaps</p>
+        </div>
+      </div>
+      <div className={gapSummary.unresolvedCount > 0 ? "knowledge-readiness-card" : "knowledge-readiness-card ready"}>
+        <h4>{gapSummary.unresolvedCount > 0 ? "Knowledge improvements available" : "No unresolved gaps for this avatar"}</h4>
+        <p>
+          {gapSummary.unresolvedCount > 0
+            ? "Review unresolved gaps to improve future answers without blocking the current avatar setup."
+            : "Gaps will appear here when this avatar cannot answer confidently."}
+        </p>
       </div>
       <div className={hasReadyKnowledge ? "knowledge-readiness-card ready" : "knowledge-readiness-card"}>
         <h4>{hasReadyKnowledge ? "Usable knowledge is ready" : "Knowledge needed"}</h4>
@@ -53,9 +70,12 @@ export default function AvatarKnowledgePanel({
         <Link className="avatarkit-button avatarkit-button-secondary" href="/dashboard/knowledge/new?type=text">
           Add manual text
         </Link>
+        <Link className="avatarkit-button avatarkit-button-secondary" href={`/dashboard/knowledge/gaps?avatarId=${avatarId}`}>
+          Review gaps
+        </Link>
       </div>
       <p className="form-helper">
-        This step does not run retrieval, embeddings, citations, or AI answer generation.
+        Gaps do not block publishing retroactively. This step does not add embeddings, crawlers, PDF extraction, or unreviewed AI FAQ publishing.
       </p>
     </section>
   )

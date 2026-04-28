@@ -249,6 +249,22 @@ function buildMetadataBadges(metadata: ConversationMessageMetadata | null): Mess
     })
   }
 
+  const safetyFallbackUsed = metadata.safetyFallbackUsed
+  const safetyEventCount = metadata.safetyEventCount
+  if (safetyFallbackUsed === true) {
+    badges.push({
+      label: "Safety fallback",
+      value: "used",
+      tone: "warn"
+    })
+  } else if (typeof safetyEventCount === "number" && safetyEventCount > 0) {
+    badges.push({
+      label: "Safety events",
+      value: String(safetyEventCount),
+      tone: "warn"
+    })
+  }
+
   const usage = parseObjectValue(metadata.usage)
   const usageProvider = parseStringValue(usage?.provider)
   if (usageProvider) {

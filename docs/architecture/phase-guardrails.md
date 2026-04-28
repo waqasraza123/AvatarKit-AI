@@ -139,6 +139,46 @@
   - Runtime traces include `stt.started`, `stt.completed`, `stt.failed`, `audio_input.stored`, and `audio_input.failed`.
   - Widget voice input remains intentionally deferred until the public widget can support multipart audio upload and public voice-input media rules without weakening the current text/lead flow.
 - Phase 14 must not add realtime streaming, continuous listening, partial transcripts, interruption/barge-in handling, WebRTC avatar sessions, full voice/video calls, billing UI/enforcement, React SDK, self-hosted avatar engine, voice cloning, custom voice upload, advanced noise cancellation, or speaker identification.
+- Phase 15 adds usage metering and cost-control foundations only:
+  - `UsageEvent` is the first-class metering table for workspace-owned usage.
+  - Usage recording is server-side only and can be called by trusted dashboard, widget, runtime, storage, and knowledge boundaries.
+  - Usage event creation must be idempotency-safe where retries can occur.
+  - Usage recording failure must not break preview, widget, knowledge, or storage flows when the primary operation can safely continue.
+  - Python runtime responses may return exact provider usage when available or deterministic estimates marked as estimated.
+  - Dashboard usage shows tracked usage, per-avatar summaries, recent usage events, static soft-limit warnings, and approximate operational cost.
+  - Estimated cost is internal operational cost only and must never be presented as customer billing, invoices, or subscription amount.
+- Phase 15 must not add Stripe, checkout, subscriptions, invoices, payment methods, billing portal, paid plan upgrades, hard usage blocking, billing enforcement, advanced admin cost dashboard, realtime streaming, React SDK, self-hosted avatar engine, CRM integrations, webhooks, or public arbitrary usage-event creation.
+- Phase 16 adds safety events and moderation foundations only:
+  - `SafetyEvent` is the first-class workspace-scoped safety incident table.
+  - TypeScript owns avatar setup validation, widget/public endpoint safety persistence, lead input checks, dashboard visibility, review actions, and manual avatar suspension controls.
+  - Python owns runtime user-message pre-checks, generated-answer post-checks, safe fallback/rewrite behavior, and structured safety result payloads.
+  - Safety event writes must store safe excerpts only and must not store hidden prompts, secrets, raw provider payloads, or large unbounded content.
+  - Runtime safety writes must not crash the primary response flow if event persistence fails; failures should be logged/traced where possible.
+  - Safety dashboard reads are available to all workspace roles, including `VIEWER`.
+  - Safety review mutations are restricted to `OWNER`, `ADMIN`, and `OPERATOR`.
+  - Manual avatar suspension from safety context is restricted to `OWNER` and `ADMIN`.
+  - Suspended avatars cannot preview, publish, or run public widget runtime.
+- Phase 16 must not add public identity verification, KYC, biometric face recognition, celebrity/public figure detection through external services, legal compliance certification, account-wide bans, automated billing enforcement, Stripe, realtime streaming, React SDK, self-hosted avatar engine, CRM integrations, advanced ML moderation provider dependencies, or hidden prompt/policy disclosure.
+- Phase 17 adds knowledge gap detection only:
+  - `KnowledgeGap` is workspace-scoped and may link to an avatar, conversation, message, and resolving user.
+  - Gap creation is centralized in trusted TypeScript server code; public widget clients cannot create arbitrary gaps.
+  - Runtime gaps come from missing knowledge, low retrieval confidence, fallback usage, repeated unresolved questions, or appropriate knowledge-related handoff outcomes.
+  - Unsafe, abusive, prompt-injection, impersonation, fake endorsement, public figure, and sensitive medical/legal/financial requests should not become business knowledge gaps.
+  - Deduplication is deterministic normalized text matching per workspace/avatar among unresolved gaps; Phase 17 does not add semantic clustering or embeddings.
+  - `VIEWER` can inspect gaps but cannot create, resolve, ignore, or convert gaps.
+  - `OWNER`, `ADMIN`, and `OPERATOR` can manually mark conversation messages, update gap status, and convert reviewed gaps to FAQ knowledge.
+  - Converting a gap to FAQ requires reviewed user-entered answer text and marks the gap resolved.
+- Phase 17 must not add advanced ML clustering, embeddings, crawler/PDF extraction, unreviewed AI-generated FAQ publishing, public arbitrary gap creation, CRM sync, billing enforcement, realtime streaming beyond Phase 18 work, or future SDK/API behavior.
+- Phase 18 adds realtime streaming v1 only:
+  - `RealtimeSession` tracks workspace/avatar/conversation lifecycle for dashboard preview, widget, and future API channels.
+  - Transport is TypeScript-managed Server-Sent Events with normal POST commands; Python remains an internal service-token runtime endpoint.
+  - Dashboard Preview keeps standard request/response mode and adds optional realtime mode.
+  - Widget realtime may start a session, send text, receive status/final/media/lead events, and fall back to the existing request/response path.
+  - Realtime v1 may reuse the existing runtime pipeline and emit final answer events when LLM token streaming is unavailable.
+  - Public widget realtime must reuse published-avatar eligibility and allowed-domain checks.
+  - Runtime traces and non-billing usage events may record realtime session, message, fallback, expiry, and event activity.
+  - Inactive realtime sessions may expire and require a new session before more messages are accepted.
+- Phase 18 must not add WebRTC avatar calls, continuous listening, barge-in/interruption handling, full live agent handoff, true low-latency video streaming, public SDK/API phase work, billing foundation, admin observability expansion, self-hosted GPU runtime, 3D rendering, or fake partial-token streaming.
 
 ## Phase 1 decisions (implemented)
 

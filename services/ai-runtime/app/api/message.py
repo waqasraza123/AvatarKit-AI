@@ -24,7 +24,9 @@ from app.runtime.avatar_media import (
 )
 from app.runtime.safety import (
     SafetyDecision,
+    SafetyResult,
     assess_context_match,
+    assess_generated_answer_safety,
     assess_request_safety,
     infer_intent,
 )
@@ -39,6 +41,16 @@ from app.runtime.stt import (
     SttProviderError,
     build_stt_provider,
 )
+
+KnowledgeGapReason = Literal[
+    "LOW_RETRIEVAL_CONFIDENCE",
+    "NO_RELEVANT_KNOWLEDGE",
+    "FALLBACK_USED",
+    "USER_REPEATED_QUESTION",
+    "SAFETY_HANDOFF",
+    "OPERATOR_MARKED_POOR",
+    "UNKNOWN",
+]
 
 
 router = APIRouter(prefix="/runtime")
@@ -169,7 +181,7 @@ class RuntimeUsage(BaseModel):
     reason: str | None = None
     retrievedChunkCount: int | None = None
     matchedChunkCount: int | None = None
-    tokens: Dict[str, int] | None = None
+    tokens: Dict[str, Any] | None = None
 
 
 class RuntimeLeadCapture(BaseModel):
@@ -186,6 +198,12 @@ class RuntimeMessageResponse(BaseModel):
     answer: str
     intent: str
     confidence: float
+    retrievalConfidence: float | None = None
+    fallbackUsed: bool = False
+    missingKnowledge: bool = False
+    handoffRequired: bool = False
+    gapReason: KnowledgeGapReason | None = None
+    originalQuestion: str | None = None
     leadCaptureDecision: Literal["none", "request"]
     leadCapture: RuntimeLeadCapture = Field(default_factory=RuntimeLeadCapture)
     handoffDecision: Literal["none", "request"]
@@ -197,6 +215,7 @@ class RuntimeMessageResponse(BaseModel):
     video: RuntimeVideoOutput | None = None
     videoError: RuntimeVideoError | None = None
     transcription: RuntimeTranscriptionOutput | None = None
+    safetyEvents: List[SafetyResult] = Field(default_factory=list)
 
 
 class SourceSimilarity:
@@ -386,6 +405,26 @@ def _normalize_query(text: str) -> List[str]:
     return [token for token in terms if len(token) > 2]
 
 
+def _estimate_tokens(text: str) -> int:
+    normalized = " ".join(text.split())
+    if not normalized:
+        return 0
+
+    return max(1, round(len(normalized) / 4))
+
+
+def _estimated_token_usage(input_text: str, output_text: str, reason: str) -> Dict[str, Any]:
+    input_tokens = _estimate_tokens(input_text)
+    output_tokens = _estimate_tokens(output_text)
+    return {
+        "inputTokens": input_tokens,
+        "outputTokens": output_tokens,
+        "totalTokens": input_tokens + output_tokens,
+        "estimated": True,
+        "estimationReason": reason
+    }
+
+
 async def _run_with_provider(
     prompt: str,
     context: str,
@@ -412,6 +451,7 @@ def _build_error_payload(
     transcription: RuntimeTranscriptionOutput | None = None
 ) -> RuntimeMessageResponse:
     lead_capture = _resolve_lead_capture(request, "error", 0.18, input_text)
+    original_question = input_text or request.inputText
     return RuntimeMessageResponse(
         conversationId=request.conversationId,
         messageId=request.messageId,
@@ -422,6 +462,12 @@ def _build_error_payload(
         ),
         intent="runtime_failure",
         confidence=0.18,
+        retrievalConfidence=0.0,
+        fallbackUsed=True,
+        missingKnowledge=False,
+        handoffRequired=True,
+        gapReason=None,
+        originalQuestion=original_question,
         leadCaptureDecision="request" if lead_capture.required else "none",
         leadCapture=lead_capture,
         handoffDecision="request",
@@ -431,7 +477,12 @@ def _build_error_payload(
             mockFallbackUsed=True,
             reason=reason,
             retrievedChunkCount=0,
-            matchedChunkCount=0
+            matchedChunkCount=0,
+            tokens=_estimated_token_usage(
+                input_text or request.inputText,
+                "I’m sorry, I can’t produce a reliable answer right now. Please review this in a support workflow.",
+                reason
+            )
         ),
         sourceReferences=[],
         safetyReason=None,
@@ -439,8 +490,27 @@ def _build_error_payload(
         audioError=None,
         video=None,
         videoError=None,
-        transcription=transcription
+        transcription=transcription,
+        safetyEvents=[]
     )
+
+
+def _resolve_gap_reason(
+    status: Literal["ok", "fallback", "blocked", "error"],
+    retrieval_confidence: float,
+    missing_knowledge: bool,
+    handoff_required: bool,
+    usage_reason: str | None
+) -> KnowledgeGapReason | None:
+    if missing_knowledge or usage_reason == "missing_knowledge":
+        return "NO_RELEVANT_KNOWLEDGE"
+    if status == "fallback" or usage_reason == "generated_answer_rewritten":
+        return "FALLBACK_USED"
+    if retrieval_confidence < 0.32:
+        return "LOW_RETRIEVAL_CONFIDENCE"
+    if handoff_required:
+        return "SAFETY_HANDOFF"
+    return None
 
 
 def _decode_audio_base64(audio_base64: str) -> bytes:
@@ -685,6 +755,12 @@ async def runtime_message(
             answer=answer,
             intent=intent,
             confidence=0.2,
+            retrievalConfidence=0.0,
+            fallbackUsed=True,
+            missingKnowledge=True,
+            handoffRequired=True,
+            gapReason="NO_RELEVANT_KNOWLEDGE",
+            originalQuestion=user_input,
             leadCaptureDecision="request" if lead_capture.required else "none",
             leadCapture=lead_capture,
             handoffDecision="request",
@@ -694,7 +770,8 @@ async def runtime_message(
                 mockFallbackUsed=True,
                 reason="missing_knowledge",
                 retrievedChunkCount=0,
-                matchedChunkCount=0
+                matchedChunkCount=0,
+                tokens=_estimated_token_usage(user_input, answer, "missing_knowledge")
             ),
             sourceReferences=[],
             safetyReason=None,
@@ -702,18 +779,19 @@ async def runtime_message(
             audioError=audio_error,
             video=video,
             videoError=video_error,
-            transcription=transcription
+            transcription=transcription,
+            safetyEvents=[]
         )
 
     if not safety.allowed:
         elapsed_ms = int((datetime.now(UTC) - started_at).total_seconds() * 1000)
-        answer = (
-            "I can’t provide that request safely here. This is a guarded preview experience and "
-            "definitive legal, medical, or financial advice is intentionally blocked."
+        answer = safety.result.fallbackAnswer if safety.result and safety.result.fallbackAnswer else (
+            "I can’t handle that safely here. A human team member should review this request."
         )
         audio, audio_error = await _generate_audio_for_response(request, answer)
         video, video_error = await _generate_video_for_response(request, answer, audio)
         lead_capture = _resolve_lead_capture(request, "blocked", safety.confidence, user_input)
+        safety_events = [safety.result] if safety.result else []
         return RuntimeMessageResponse(
             conversationId=request.conversationId,
             messageId=request.messageId,
@@ -721,6 +799,12 @@ async def runtime_message(
             answer=answer,
             intent=safety.intent,
             confidence=safety.confidence,
+            retrievalConfidence=float(matched_chunk_count) / max(1.0, float(len(chunks))),
+            fallbackUsed=True,
+            missingKnowledge=False,
+            handoffRequired=True,
+            gapReason=None,
+            originalQuestion=user_input,
             leadCaptureDecision="request" if lead_capture.required else "none",
             leadCapture=lead_capture,
             handoffDecision="request",
@@ -730,7 +814,8 @@ async def runtime_message(
                 mockFallbackUsed=True,
                 reason="safety_blocked",
                 retrievedChunkCount=len(chunks),
-                matchedChunkCount=matched_chunk_count
+                matchedChunkCount=matched_chunk_count,
+                tokens=_estimated_token_usage(user_input, answer, "safety_blocked")
             ),
             sourceReferences=[],
             safetyReason=safety.reason,
@@ -738,7 +823,8 @@ async def runtime_message(
             audioError=audio_error,
             video=video,
             videoError=video_error,
-            transcription=transcription
+            transcription=transcription,
+            safetyEvents=safety_events
         )
 
     context = _build_context(chunks)
@@ -800,6 +886,23 @@ async def runtime_message(
     if response_status == "ok" and response_text == request.avatarConfig.fallbackMessage:
         response_status = "fallback"
 
+    safety_events: List[SafetyResult] = []
+    post_check = assess_generated_answer_safety(
+        answer=response_text,
+        confidence=match_ratio,
+        matched_chunk_count=matched_chunk_count,
+        fallback_message=request.avatarConfig.fallbackMessage
+    )
+    if post_check:
+        safety_events.append(post_check)
+        if post_check.action == "REWRITE" and post_check.fallbackAnswer:
+            response_text = post_check.fallbackAnswer
+            response_status = "fallback"
+        elif post_check.action in ("REFUSE", "BLOCK") and post_check.fallbackAnswer:
+            response_text = post_check.fallbackAnswer
+            response_status = "blocked"
+        usage_payload["reason"] = post_check.eventType
+
     decision = RuntimeDecision(
         status=response_status,
         intent=intent,
@@ -808,16 +911,23 @@ async def runtime_message(
         lead_capture=_resolve_lead_capture(request, response_status, match_ratio, user_input),
         handoff_request=(
             _resolve_handoff_decision(response_status, safety, matched_chunk_count > 0) == "request"
+            or any(event.handoffRequired for event in safety_events)
         ),
         usage=usage_payload,
         source_references=source_references
     )
 
     if decision.status == "blocked":
-        decision.safety_reason = safety.reason
+        decision.safety_reason = (safety.reason or safety_events[0].reason) if safety_events else safety.reason
+    elif safety_events:
+        decision.safety_reason = safety_events[0].reason
 
     audio, audio_error = await _generate_audio_for_response(request, decision.answer)
     video, video_error = await _generate_video_for_response(request, decision.answer, audio)
+
+    usage_reason = str(usage_payload.get("reason", "")) if usage_payload.get("reason") else None
+    retrieval_confidence = min(0.97, float(matched_chunk_count) / max(1.0, float(len(chunks))))
+    missing_knowledge = matched_chunk_count == 0 and decision.status == "fallback"
 
     return RuntimeMessageResponse(
         conversationId=request.conversationId,
@@ -826,6 +936,18 @@ async def runtime_message(
         answer=decision.answer,
         intent=decision.intent,
         confidence=decision.confidence,
+        retrievalConfidence=retrieval_confidence,
+        fallbackUsed=decision.status == "fallback",
+        missingKnowledge=missing_knowledge,
+        handoffRequired=decision.handoff_request,
+        gapReason=_resolve_gap_reason(
+            decision.status,
+            retrieval_confidence,
+            missing_knowledge,
+            decision.handoff_request,
+            usage_reason
+        ),
+        originalQuestion=user_input,
         leadCaptureDecision="request" if decision.lead_capture.required else "none",
         leadCapture=decision.lead_capture,
         handoffDecision="request" if decision.handoff_request else "none",
@@ -833,11 +955,11 @@ async def runtime_message(
             provider=str(usage_payload.get("provider", "MOCK")),
             elapsedMs=int(usage_payload.get("elapsedMs", 0)),
             mockFallbackUsed=bool(usage_payload.get("mockFallbackUsed", False)),
-            reason=str(usage_payload.get("reason", "")) if usage_payload.get("reason") else None,
+            reason=usage_reason,
             retrievedChunkCount=int(usage_payload.get("retrievedChunkCount", 0)),
             matchedChunkCount=int(usage_payload.get("matchedChunkCount", matched_chunk_count)),
             tokens=(
-                {key: int(value) for key, value in usage_payload.get("tokens", {}).items()}
+                dict(usage_payload.get("tokens", {}))
                 if isinstance(usage_payload.get("tokens"), dict)
                 else None
             )
@@ -848,5 +970,6 @@ async def runtime_message(
         audioError=audio_error,
         video=video,
         videoError=video_error,
-        transcription=transcription
+        transcription=transcription,
+        safetyEvents=safety_events
     )

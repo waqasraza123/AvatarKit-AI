@@ -1,4 +1,5 @@
 import type { RuntimeKnowledgeChunkForRuntime } from "@/lib/avatar-runtime-retrieval"
+import type { KnowledgeGapReason, SafetyAction, SafetyEventType, SafetySeverity } from "@prisma/client"
 
 export type RuntimeAvatarConfig = {
   avatarId: string
@@ -72,7 +73,7 @@ export type RuntimeUsage = {
   reason?: string
   retrievedChunkCount?: number
   matchedChunkCount?: number
-  tokens?: Record<string, number>
+  tokens?: Record<string, number | string | boolean>
 }
 
 export type RuntimeAudioOutput = {
@@ -125,6 +126,17 @@ export type RuntimeLeadCapture = {
   promptText: string | null
 }
 
+export type RuntimeSafetyResult = {
+  allowed: boolean
+  severity: SafetySeverity
+  action: SafetyAction
+  reason: string
+  fallbackAnswer?: string | null
+  handoffRequired: boolean
+  eventType: SafetyEventType
+  metadata: Record<string, unknown>
+}
+
 export type RuntimeResponse = {
   conversationId: string
   messageId: string
@@ -132,6 +144,12 @@ export type RuntimeResponse = {
   answer: string
   intent?: string
   confidence?: number
+  retrievalConfidence?: number | null
+  fallbackUsed?: boolean
+  missingKnowledge?: boolean
+  handoffRequired?: boolean
+  gapReason?: KnowledgeGapReason | null
+  originalQuestion?: string | null
   leadCaptureDecision: "none" | "request"
   leadCapture: RuntimeLeadCapture
   handoffDecision: "none" | "request"
@@ -143,6 +161,7 @@ export type RuntimeResponse = {
   video?: RuntimeVideoOutput | null
   videoError?: RuntimeVideoError | null
   transcription?: RuntimeTranscription | null
+  safetyEvents?: RuntimeSafetyResult[]
 }
 
 export type RuntimeErrorResponse = {
@@ -224,6 +243,39 @@ function parseRuntimeLeadCapture(value: unknown, decision: "none" | "request"): 
   }
 }
 
+function isRuntimeSafetyResult(value: unknown): value is RuntimeSafetyResult {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false
+  }
+
+  const candidate = value as Partial<RuntimeSafetyResult>
+  return typeof candidate.allowed === "boolean" &&
+    typeof candidate.severity === "string" &&
+    typeof candidate.action === "string" &&
+    typeof candidate.reason === "string" &&
+    typeof candidate.handoffRequired === "boolean" &&
+    typeof candidate.eventType === "string"
+}
+
+function parseRuntimeSafetyEvents(value: unknown): RuntimeSafetyResult[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value.filter(isRuntimeSafetyResult).map(item => ({
+    allowed: item.allowed,
+    severity: item.severity,
+    action: item.action,
+    reason: item.reason,
+    fallbackAnswer: typeof item.fallbackAnswer === "string" ? item.fallbackAnswer : null,
+    handoffRequired: item.handoffRequired,
+    eventType: item.eventType,
+    metadata: item.metadata && typeof item.metadata === "object" && !Array.isArray(item.metadata)
+      ? item.metadata
+      : {}
+  }))
+}
+
 async function readRuntimeBody(response: Response): Promise<unknown> {
   const text = await response.text()
   if (!text) {
@@ -248,17 +300,22 @@ export async function sendRuntimeTextMessage(
   const timeoutMs = resolveRuntimeTimeoutMs()
 
   if (!token) {
-    return {
-      status: "error",
-      conversationId: request.conversationId,
-      messageId: request.messageId,
-      answer: "Runtime service token is not configured for runtime requests.",
+      return {
+        status: "error",
+        conversationId: request.conversationId,
+        messageId: request.messageId,
+        answer: "Runtime service token is not configured for runtime requests.",
       leadCaptureDecision: "none",
       leadCapture: defaultLeadCapture(),
-      handoffDecision: "request",
-      usage: { provider: "MOCK", mockFallbackUsed: true },
-      sourceReferences: []
-    }
+        handoffDecision: "request",
+        usage: { provider: "MOCK", mockFallbackUsed: true },
+        sourceReferences: [],
+        safetyEvents: [],
+        fallbackUsed: true,
+        missingKnowledge: false,
+        handoffRequired: true,
+        originalQuestion: request.inputText || null
+      }
   }
 
   const controller = new AbortController()
@@ -298,7 +355,11 @@ export async function sendRuntimeTextMessage(
           leadCapture: defaultLeadCapture(),
           handoffDecision: "request",
           usage: { provider: "unknown" },
-          sourceReferences: []
+          sourceReferences: [],
+          safetyEvents: [],
+          fallbackUsed: true,
+          handoffRequired: true,
+          originalQuestion: request.inputText || null
         }
       }
 
@@ -313,7 +374,11 @@ export async function sendRuntimeTextMessage(
         leadCapture: defaultLeadCapture(),
         handoffDecision: "request",
         usage: { provider: "unknown", reason: `HTTP_${response.status}` },
-        sourceReferences: []
+        sourceReferences: [],
+        safetyEvents: [],
+        fallbackUsed: true,
+        handoffRequired: true,
+        originalQuestion: request.inputText || null
       }
     }
 
@@ -337,11 +402,18 @@ export async function sendRuntimeTextMessage(
       usage: typedPayload.usage || { provider: "unknown" },
       sourceReferences: typedPayload.sourceReferences ?? [],
       safetyReason: typedPayload.safetyReason,
+      retrievalConfidence: typeof typedPayload.retrievalConfidence === "number" ? typedPayload.retrievalConfidence : null,
+      fallbackUsed: typedPayload.fallbackUsed === true || typedPayload.status === "fallback",
+      missingKnowledge: typedPayload.missingKnowledge === true,
+      handoffRequired: typedPayload.handoffRequired === true || typedPayload.handoffDecision === "request",
+      gapReason: typedPayload.gapReason ?? null,
+      originalQuestion: typeof typedPayload.originalQuestion === "string" ? typedPayload.originalQuestion : request.inputText || null,
       audio: typedPayload.audio ?? null,
       audioError: typedPayload.audioError ?? null,
       video: typedPayload.video ?? null,
       videoError: typedPayload.videoError ?? null,
-      transcription: typedPayload.transcription ?? null
+      transcription: typedPayload.transcription ?? null,
+      safetyEvents: parseRuntimeSafetyEvents(typedPayload.safetyEvents)
     }
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
@@ -354,7 +426,11 @@ export async function sendRuntimeTextMessage(
         leadCapture: defaultLeadCapture(),
         handoffDecision: "request",
         usage: { provider: "unknown", reason: "timeout" },
-        sourceReferences: []
+        sourceReferences: [],
+        safetyEvents: [],
+        fallbackUsed: true,
+        handoffRequired: true,
+        originalQuestion: request.inputText || null
       }
     }
 
@@ -367,7 +443,11 @@ export async function sendRuntimeTextMessage(
       leadCapture: defaultLeadCapture(),
       handoffDecision: "request",
       usage: { provider: "unknown", reason: "network_error" },
-      sourceReferences: []
+      sourceReferences: [],
+      safetyEvents: [],
+      fallbackUsed: true,
+      handoffRequired: true,
+      originalQuestion: request.inputText || null
     }
   } finally {
     clearTimeout(timeout)

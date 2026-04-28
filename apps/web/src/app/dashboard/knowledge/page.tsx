@@ -7,6 +7,7 @@ import {
   fetchKnowledgeSourcesForWorkspace,
   fetchKnowledgeSummaryForWorkspace
 } from "@/lib/knowledge"
+import { fetchKnowledgeGapSummary } from "@/lib/knowledge-gap"
 import type { KnowledgeStatusValue } from "@/lib/knowledge-shared"
 import { getWorkspaceContextForRequest } from "@/lib/workspace"
 
@@ -33,9 +34,10 @@ export default async function DashboardKnowledgePage({
     return null
   }
 
-  const [sources, summary] = await Promise.all([
+  const [sources, summary, gapSummary] = await Promise.all([
     fetchKnowledgeSourcesForWorkspace(context.workspace.id),
-    fetchKnowledgeSummaryForWorkspace(context.workspace.id)
+    fetchKnowledgeSummaryForWorkspace(context.workspace.id),
+    fetchKnowledgeGapSummary(context.workspace.id)
   ])
   const canManage = canManageKnowledge(context.workspaceMembership.role)
   const isViewer = context.workspaceMembership.role === WorkspaceRole.VIEWER
@@ -46,11 +48,11 @@ export default async function DashboardKnowledgePage({
         <p className="eyebrow">AvatarKit AI</p>
         <h1>Knowledge Base</h1>
         <p className="hero-copy section-subtitle">
-          Store business-approved information that future avatar answers will use as source-of-truth context.
+          Store business-approved information that avatar answers use as source-of-truth context.
         </p>
         <p className="avatar-page-intro">
-          Phase 6 supports FAQ and manual text sources with deterministic chunks. Website crawling, PDF
-          extraction, embeddings, and AI answer generation are intentionally not active yet.
+          FAQ and manual text sources are available with deterministic chunks. Website crawling, PDF
+          extraction, embeddings, and unreviewed AI-authored knowledge are intentionally not active.
         </p>
         <div className="knowledge-summary-grid">
           <div>
@@ -69,6 +71,10 @@ export default async function DashboardKnowledgePage({
             <span>{summary.archivedSourceCount}</span>
             <p>Archived sources</p>
           </div>
+          <div>
+            <span>{gapSummary.unresolvedCount}</span>
+            <p>Unresolved gaps</p>
+          </div>
         </div>
         <div className="studio-toolbar">
           {isViewer ? (
@@ -81,10 +87,43 @@ export default async function DashboardKnowledgePage({
               <Link className="avatarkit-button avatarkit-button-secondary" href="/dashboard/knowledge/new?type=text">
                 Add manual text
               </Link>
+              <Link className="avatarkit-button avatarkit-button-secondary" href="/dashboard/knowledge/gaps">
+                Review gaps
+              </Link>
             </div>
           )}
         </div>
       </section>
+      {gapSummary.topUnresolved.length > 0 ? (
+        <section className="content-card">
+          <div className="content-card-header">
+            <div>
+              <p className="eyebrow">Knowledge gaps</p>
+              <h2>Top unresolved questions</h2>
+            </div>
+            <Link className="avatarkit-link-button" href="/dashboard/knowledge/gaps">
+              Open gaps
+            </Link>
+          </div>
+          <div className="knowledge-source-list">
+            {gapSummary.topUnresolved.map(gap => (
+              <article className="knowledge-source-card" key={gap.id}>
+                <div className="knowledge-source-header">
+                  <div>
+                    <h3>{gap.question}</h3>
+                    <p className="avatar-meta">
+                      {gap.avatarName ?? "Workspace"} · frequency {gap.frequency} · last asked {gap.lastAskedAt}
+                    </p>
+                  </div>
+                  <Link className="avatarkit-link-button" href={`/dashboard/knowledge/gaps/${gap.id}`}>
+                    Review
+                  </Link>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
       <section className="content-card">
         <h2>Knowledge sources</h2>
         {sources.length === 0 ? (

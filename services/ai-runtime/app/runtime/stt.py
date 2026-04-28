@@ -50,10 +50,13 @@ class SttProvider(ABC):
 
 
 def _usage(provider: str, duration_seconds: float | None, mock_fallback_used: bool) -> Dict[str, Any]:
+    seconds = duration_seconds if duration_seconds is not None else 0.0
     return {
         "provider": provider,
         "requests": 1,
-        "durationSeconds": duration_seconds,
+        "seconds": seconds,
+        "durationSeconds": seconds,
+        "durationEstimated": duration_seconds is None,
         "mockFallbackUsed": mock_fallback_used
     }
 
@@ -107,13 +110,14 @@ class OpenAIWhisperSttProvider(SttProvider):
         transcript = str(getattr(response, "text", "") or "").strip()
         language = getattr(response, "language", None)
         duration = getattr(response, "duration", None)
+        resolved_duration = float(duration) if isinstance(duration, (int, float)) else audio.duration_seconds
 
         return SttProviderOutput(
             transcript=transcript,
             language=str(language) if language else audio.language,
             confidence=None,
-            duration_seconds=float(duration) if isinstance(duration, (int, float)) else audio.duration_seconds,
-            usage=_usage("OPENAI_WHISPER", audio.duration_seconds, False),
+            duration_seconds=resolved_duration,
+            usage=_usage("OPENAI_WHISPER", resolved_duration, False),
             metadata=SttProviderMetadata(provider="OPENAI_WHISPER", model=self.model)
         )
 
@@ -164,13 +168,14 @@ class DeepgramSttProvider(SttProvider):
         languages = data.get("results", {}).get("languages", [])
         language_value = languages[0] if isinstance(languages, list) and languages else None
         language = language_value.get("language") if isinstance(language_value, dict) else language_value
+        resolved_duration = float(duration) if isinstance(duration, (int, float)) else audio.duration_seconds
 
         return SttProviderOutput(
             transcript=transcript,
             language=str(language) if language else audio.language,
             confidence=float(confidence) if isinstance(confidence, (int, float)) else None,
-            duration_seconds=float(duration) if isinstance(duration, (int, float)) else audio.duration_seconds,
-            usage=_usage("DEEPGRAM", audio.duration_seconds, False),
+            duration_seconds=resolved_duration,
+            usage=_usage("DEEPGRAM", resolved_duration, False),
             metadata=SttProviderMetadata(provider="DEEPGRAM", model=self.model)
         )
 

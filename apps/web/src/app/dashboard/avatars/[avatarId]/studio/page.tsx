@@ -16,6 +16,7 @@ import {
 } from "@/lib/avatar"
 import { fetchActiveVoices, isVoiceLanguageCompatible } from "@/lib/avatar-voice"
 import { fetchKnowledgeSummaryForWorkspace } from "@/lib/knowledge"
+import { fetchKnowledgeGapSummary } from "@/lib/knowledge-gap"
 import { hasWorkspaceRole, getWorkspaceContextForRequest } from "@/lib/workspace"
 import AvatarBasicsForm from "./_components/avatar-basics-form"
 import AvatarBehaviorForm from "./_components/avatar-behavior-form"
@@ -130,9 +131,12 @@ export default async function AvatarStudioPage({
     avatar.voice && isVoiceLanguageCompatible(avatar.language, avatar.voice.language)
   )
   const voices = activeStep === "voice" ? await fetchActiveVoices() : []
-  const knowledgeSummary = activeStep === "knowledge"
-    ? await fetchKnowledgeSummaryForWorkspace(context.workspace.id)
-    : null
+  const [knowledgeSummary, knowledgeGapSummary] = activeStep === "knowledge"
+    ? await Promise.all([
+      fetchKnowledgeSummaryForWorkspace(context.workspace.id),
+      fetchKnowledgeGapSummary(context.workspace.id, avatar.id)
+    ])
+    : [null, null]
   const previewConversation = activeStep === "preview"
     ? await fetchDashboardPreviewConversation(context.workspace.id, avatar.id)
     : null
@@ -225,8 +229,8 @@ export default async function AvatarStudioPage({
               canEdit={canEdit}
             />
           ) : null}
-          {activeStep === "knowledge" && knowledgeSummary ? (
-            <AvatarKnowledgePanel summary={knowledgeSummary} />
+          {activeStep === "knowledge" && knowledgeSummary && knowledgeGapSummary ? (
+            <AvatarKnowledgePanel summary={knowledgeSummary} gapSummary={knowledgeGapSummary} avatarId={avatar.id} />
           ) : null}
           {activeStep === "preview" ? (
             <AvatarPreviewPanel

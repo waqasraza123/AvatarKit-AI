@@ -11,6 +11,7 @@ const navigationItems = [
   { label: "Leads", href: "/dashboard/leads" },
   { label: "Embed", href: "/dashboard/embed" },
   { label: "Usage", href: "/dashboard/usage" },
+  { label: "Safety", href: "/dashboard/safety" },
   { label: "Settings", href: "/dashboard/settings" }
 ]
 
@@ -81,4 +82,3 @@ export default async function DashboardLayout({ children }: { children: React.Re
     </div>
   )
 }
-

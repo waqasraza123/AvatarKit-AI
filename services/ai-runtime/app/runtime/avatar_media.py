@@ -113,6 +113,7 @@ class MockAvatarMediaProvider(AvatarMediaProvider):
             usage={
                 "requests": 1,
                 "seconds": 3.0,
+                "secondsEstimated": False,
                 "provider": "MOCK",
                 "mockFallbackUsed": True
             },
@@ -191,7 +192,7 @@ class DidAvatarMediaProvider(AvatarMediaProvider):
                     provider_job_id=provider_job_id or None,
                     video_url=result_url,
                     duration_seconds=_parse_duration_seconds(data),
-                    usage=_video_usage("DID", _parse_duration_seconds(data)),
+                    usage=_video_usage("DID", _parse_duration_seconds(data), payload.text),
                     metadata={"providerStatus": data.get("status")}
                 )
 
@@ -223,7 +224,7 @@ class DidAvatarMediaProvider(AvatarMediaProvider):
                         provider_job_id=provider_job_id,
                         video_url=status_url,
                         duration_seconds=duration_seconds,
-                        usage=_video_usage("DID", duration_seconds),
+                        usage=_video_usage("DID", duration_seconds, payload.text),
                         metadata={"providerStatus": status_data.get("status")}
                     )
                 if status_value in ("error", "failed", "rejected"):
@@ -235,7 +236,7 @@ class DidAvatarMediaProvider(AvatarMediaProvider):
         return AvatarMediaOutput(
             status="processing",
             provider_job_id=provider_job_id,
-            usage=_video_usage("DID", None),
+            usage=_video_usage("DID", None, payload.text),
             metadata={"pollAttempts": self.poll_attempts}
         )
 
@@ -343,10 +344,19 @@ def _parse_duration_seconds(data: Dict[str, Any]) -> float | None:
     return None
 
 
-def _video_usage(provider: str, duration_seconds: float | None) -> Dict[str, Any]:
+def _estimate_video_seconds(text: str | None) -> float:
+    if not text:
+        return 3.0
+
+    return max(2.0, min(20.0, round(len(text) / 13, 2)))
+
+
+def _video_usage(provider: str, duration_seconds: float | None, text: str | None = None) -> Dict[str, Any]:
+    seconds = duration_seconds if duration_seconds is not None else _estimate_video_seconds(text)
     return {
         "requests": 1,
-        "seconds": duration_seconds,
+        "seconds": seconds,
+        "secondsEstimated": duration_seconds is None,
         "provider": provider,
         "mockFallbackUsed": provider == "MOCK"
     }

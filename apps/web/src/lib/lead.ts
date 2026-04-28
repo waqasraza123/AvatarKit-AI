@@ -3,6 +3,8 @@ import {
   ConversationChannel,
   LeadSource,
   LeadStatus,
+  SafetyAction,
+  SafetySource,
   WorkspaceRole,
   type Prisma
 } from "@prisma/client"
@@ -17,6 +19,10 @@ import {
   WidgetPublicError,
   assertWidgetDomainAllowed
 } from "@/lib/widget"
+import {
+  assessLeadInputSafety,
+  recordSafetyEvent
+} from "@/lib/safety"
 
 export const LEAD_STATUS_FILTERS = [
   LeadStatus.NEW,
@@ -469,6 +475,34 @@ export async function submitWidgetLead(avatarId: string, request: Request, body:
     throw new WidgetPublicError(404, "conversation_not_found", "Conversation was not found for this widget session.")
   }
 
+  const leadSafety = assessLeadInputSafety(parsed.values)
+  if (leadSafety) {
+    await recordSafetyEvent({
+      workspaceId: avatar.workspaceId,
+      avatarId: avatar.id,
+      conversationId: conversation.id,
+      eventType: leadSafety.eventType,
+      severity: leadSafety.severity,
+      action: leadSafety.action,
+      source: SafetySource.LEAD_CAPTURE,
+      inputExcerpt: [
+        parsed.values.name,
+        parsed.values.email,
+        parsed.values.phone,
+        parsed.values.message
+      ].filter(Boolean).join(" "),
+      reason: leadSafety.reason,
+      metadata: {
+        ...leadSafety.metadata,
+        domain: domainAccess.domain
+      }
+    })
+
+    if (leadSafety.action === SafetyAction.BLOCK) {
+      throw new WidgetPublicError(400, "lead_safety_blocked", "Lead details could not be accepted because the message appears unsafe.")
+    }
+  }
+
   const duplicateBehavior = conversation.lead ? "updated" : "created"
   const lead = await prisma.lead.upsert({
     where: { conversationId: conversation.id },
@@ -484,7 +518,9 @@ export async function submitWidgetLead(avatarId: string, request: Request, body:
       message: parsed.values.message,
       metadata: {
         domain: domainAccess.domain,
-        userAgent: request.headers.get("user-agent")?.slice(0, 300) ?? null
+        userAgent: request.headers.get("user-agent")?.slice(0, 300) ?? null,
+        safetyFlagged: Boolean(leadSafety),
+        safetyReason: leadSafety?.reason ?? null
       }
     },
     update: {
@@ -496,7 +532,9 @@ export async function submitWidgetLead(avatarId: string, request: Request, body:
       metadata: {
         domain: domainAccess.domain,
         userAgent: request.headers.get("user-agent")?.slice(0, 300) ?? null,
-        duplicateBehavior: "updated_existing_primary_lead"
+        duplicateBehavior: "updated_existing_primary_lead",
+        safetyFlagged: Boolean(leadSafety),
+        safetyReason: leadSafety?.reason ?? null
       }
     },
     select: {

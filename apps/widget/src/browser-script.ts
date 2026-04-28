@@ -33,6 +33,9 @@ export const widgetBrowserScript = `(() => {
     error: "",
     conversationId: "",
     visitorId: "",
+    realtimeSessionId: "",
+    realtimeStatus: "idle",
+    realtimeFailed: false,
     messages: []
   };
 
@@ -157,7 +160,7 @@ export const widgetBrowserScript = `(() => {
       : state.messages.length === 0
         ? "<div class=\\"ak-empty\\">Ask a text question and this published avatar will answer here.</div>"
         : state.messages.map(messageHtml).join("") + leadCaptureHtml();
-    const thinking = state.loading ? "<div class=\\"ak-thinking\\">Thinking...</div>" : "";
+    const thinking = state.loading ? "<div class=\\"ak-thinking\\">" + escapeHtml(state.realtimeStatus && state.realtimeStatus !== "idle" ? state.realtimeStatus : "Thinking...") + "</div>" : "";
     const shell = state.open
       ? "<div class=\\"ak-panel\\"><div class=\\"ak-header\\"><div class=\\"ak-identity\\"><div class=\\"ak-avatar\\">" + escapeHtml(initials) + "</div><div class=\\"ak-title\\"><strong>" + escapeHtml(config?.displayName || "Avatar") + "</strong><span>" + escapeHtml(config?.role || "Published avatar") + "</span></div></div><button class=\\"ak-close\\" type=\\"button\\" aria-label=\\"Minimize AvatarKit widget\\">x</button></div><div class=\\"ak-body\\">" + body + thinking + "</div><form class=\\"ak-form\\"><input class=\\"ak-input\\" name=\\"message\\" type=\\"text\\" autocomplete=\\"off\\" maxlength=\\"800\\" placeholder=\\"Ask a question\\" " + (state.loading ? "disabled" : "") + " /><button class=\\"ak-send\\" type=\\"submit\\" " + (state.loading ? "disabled" : "") + ">Send</button></form></div>"
       : "<div class=\\"ak-launch-wrap\\">" + greeting + "<button class=\\"ak-launcher\\" type=\\"button\\" aria-label=\\"Open AvatarKit widget\\">" + escapeHtml(initials) + "</button></div>";
@@ -257,8 +260,18 @@ export const widgetBrowserScript = `(() => {
   async function sendMessage(content) {
     state.error = "";
     state.loading = true;
+    state.realtimeStatus = "thinking";
     state.messages.push({ role: "visitor", content });
     render();
+    if (!state.realtimeFailed) {
+      const realtimeOk = await sendRealtimeMessage(content);
+      if (realtimeOk) {
+        state.loading = false;
+        state.realtimeStatus = "waiting";
+        render();
+        return;
+      }
+    }
     try {
       const response = await fetch(apiBaseUrl + "/api/widget/" + encodeURIComponent(avatarId) + "/message", {
         method: "POST",
@@ -292,7 +305,129 @@ export const widgetBrowserScript = `(() => {
       state.error = error instanceof Error ? error.message : "Avatar response failed.";
     } finally {
       state.loading = false;
+      state.realtimeStatus = "idle";
       render();
+    }
+  }
+
+  async function ensureRealtimeSession() {
+    if (state.realtimeSessionId) {
+      return true;
+    }
+    try {
+      const response = await fetch(apiBaseUrl + "/api/widget/" + encodeURIComponent(avatarId) + "/realtime/session", {
+        method: "POST",
+        mode: "cors",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ visitorId: state.visitorId })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.message || "Realtime session failed.");
+      }
+      state.realtimeSessionId = payload.sessionId || "";
+      state.conversationId = payload.conversationId || state.conversationId;
+      state.visitorId = payload.visitorId || state.visitorId;
+      return Boolean(state.realtimeSessionId);
+    } catch {
+      state.realtimeFailed = true;
+      return false;
+    }
+  }
+
+  async function readRealtimeStream(response) {
+    const reader = response.body && response.body.getReader ? response.body.getReader() : null;
+    if (!reader) {
+      return false;
+    }
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let finalReceived = false;
+    while (true) {
+      const result = await reader.read();
+      if (result.done) {
+        break;
+      }
+      buffer += decoder.decode(result.value, { stream: true });
+      const parts = buffer.split("\\n\\n");
+      buffer = parts.pop() || "";
+      for (const part of parts) {
+        const dataLine = part.split("\\n").find(line => line.indexOf("data: ") === 0);
+        if (!dataLine) {
+          continue;
+        }
+        const event = JSON.parse(dataLine.slice(6));
+        if (event.type === "avatar.status" && event.status) {
+          state.realtimeStatus = event.status;
+          render();
+        }
+        if (event.type === "avatar.answer.final") {
+          state.messages.push({
+            role: "avatar",
+            content: event.text || "",
+            audioUrl: null,
+            videoUrl: null,
+            realtimeMessageId: event.messageId || ""
+          });
+          finalReceived = true;
+          render();
+        }
+        if (event.type === "avatar.audio.ready" && event.audioUrl) {
+          const message = [...state.messages].reverse().find(item => item.role === "avatar" && item.realtimeMessageId === event.messageId);
+          if (message) {
+            message.audioUrl = event.audioUrl;
+            render();
+          }
+        }
+        if (event.type === "avatar.video.ready" && event.videoUrl) {
+          const message = [...state.messages].reverse().find(item => item.role === "avatar" && item.realtimeMessageId === event.messageId);
+          if (message) {
+            message.videoUrl = event.videoUrl;
+            render();
+          }
+        }
+        if (event.type === "lead.capture.requested") {
+          state.leadCapture = {
+            required: true,
+            fields: event.fields || ["name", "email", "phone", "message"],
+            promptText: event.promptText || "Share your contact details and the team can follow up."
+          };
+          state.leadSubmitted = false;
+          state.leadError = "";
+          render();
+        }
+        if (event.type === "error") {
+          throw new Error(event.message || "Realtime message failed.");
+        }
+      }
+    }
+    return finalReceived;
+  }
+
+  async function sendRealtimeMessage(content) {
+    const hasSession = await ensureRealtimeSession();
+    if (!hasSession) {
+      return false;
+    }
+    try {
+      const response = await fetch(apiBaseUrl + "/api/widget/" + encodeURIComponent(avatarId) + "/realtime/sessions/" + encodeURIComponent(state.realtimeSessionId) + "/message", {
+        method: "POST",
+        mode: "cors",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: content,
+          outputMode: state.config?.defaultOutputMode || "text"
+        })
+      });
+      if (!response.ok) {
+        throw new Error("Realtime message failed.");
+      }
+      const streamed = await readRealtimeStream(response);
+      return streamed;
+    } catch {
+      state.realtimeFailed = true;
+      state.realtimeStatus = "idle";
+      return false;
     }
   }
 
