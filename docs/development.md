@@ -1,5 +1,20 @@
 # Development
 
+## Phase 22 - Self-Hosted Avatar Engine Research
+
+Detailed Phase 22 research and prototype notes live in `docs/development/phase-22-self-hosted-avatar-engine-research.md` and `docs/research/self-hosted-avatar-engine.md`.
+
+Phase 22 adds:
+
+- documented research tracks for 2D talking-head generation, realtime lip sync, and 3D avatar mode
+- disabled-by-default `SELF_HOSTED` avatar media provider prototype
+- static-video prototype mode
+- HTTP prototype mode for a private render service
+- normalized prototype request/response contract
+- GPU worker queue and face-validation direction
+
+Verification was intentionally not run for the implementation pass requested on April 29, 2026. Before approving this phase manually, follow the checklist in `docs/development/phase-22-self-hosted-avatar-engine-research.md`.
+
 ## Phase 21 - Admin, Operations, and Observability
 
 Detailed Phase 21 operations notes live in `docs/development/phase-21-admin-operations-observability.md`.
@@ -417,7 +432,7 @@ Manual approval is pending until these checks are run by the project owner.
   - `DID`: optional adapter gated by `AI_RUNTIME_AVATAR_MEDIA_PROVIDER=DID` and `DID_API_KEY`.
   - `TAVUS`: placeholder gated by `AI_RUNTIME_AVATAR_MEDIA_PROVIDER=TAVUS`; returns a structured unavailable error until the replica/persona flow is configured.
   - `SIMLI`: placeholder for future adapter work.
-  - `SELF_HOSTED`: explicitly unavailable for a future phase.
+  - `SELF_HOSTED`: Phase 22 research prototype gated by `AI_RUNTIME_SELF_HOSTED_AVATAR_MODE`; disabled by default.
 - Added generated video media type:
   - `AvatarAssetType.GENERATED_AVATAR_VIDEO`
 - Stored provider-returned video bytes under ignored local storage when a provider returns `videoBase64`:

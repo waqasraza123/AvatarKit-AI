@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     tavus_base_url: str = Field(default="https://tavusapi.com/v2", validation_alias="TAVUS_BASE_URL")
     tavus_default_replica_id: str = Field(default="", validation_alias="TAVUS_DEFAULT_REPLICA_ID")
     tavus_default_persona_id: str = Field(default="", validation_alias="TAVUS_DEFAULT_PERSONA_ID")
+    ai_runtime_self_hosted_avatar_mode: str = Field(default="DISABLED", validation_alias="AI_RUNTIME_SELF_HOSTED_AVATAR_MODE")
+    ai_runtime_self_hosted_avatar_endpoint: str = Field(default="", validation_alias="AI_RUNTIME_SELF_HOSTED_AVATAR_ENDPOINT")
+    ai_runtime_self_hosted_avatar_video_url: str = Field(default="", validation_alias="AI_RUNTIME_SELF_HOSTED_AVATAR_VIDEO_URL")
+    ai_runtime_self_hosted_avatar_timeout_seconds: float = Field(default=60.0, validation_alias="AI_RUNTIME_SELF_HOSTED_AVATAR_TIMEOUT_SECONDS")
+    ai_runtime_self_hosted_avatar_duration_seconds: float = Field(default=3.0, validation_alias="AI_RUNTIME_SELF_HOSTED_AVATAR_DURATION_SECONDS")
     environment: str = "development"
 
 

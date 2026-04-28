@@ -207,6 +207,14 @@
   - Usage spike detection compares the selected period with the immediately preceding period and only displays soft operational signals.
   - Unsuspending an avatar may restore the prior status captured in suspension metadata, otherwise it must fall back conservatively.
 - Phase 21 must not add global platform-admin identities, cross-workspace search, queue infrastructure, external observability vendors, alert delivery, automatic provider retries, hard abuse enforcement, billing enforcement, CRM workflows, webhook delivery workers, WebRTC calls, 3D rendering, or self-hosted runtime work.
+- Phase 22 adds self-hosted avatar engine research and a provider-interface prototype only:
+  - The `SELF_HOSTED` avatar media provider must stay behind the existing Python `AvatarMediaProvider` interface.
+  - Self-hosted mode must be disabled by default and require explicit research configuration.
+  - Static-video mode may return a configured video URL for product contract checks without model inference.
+  - HTTP mode may call a private research render endpoint and normalize completed, processing, and failed responses.
+  - Research findings must document 2D talking-head, realtime lip-sync, 3D avatar, GPU queue, face-validation, licensing, quality, latency, and failure-mode concerns.
+  - Product, widget, SDK, public API, and dashboard routes must not call self-hosted model services directly.
+- Phase 22 must not add production self-hosted inference, customer-facing self-hosted controls, GPU queue persistence, WebRTC avatar calls, realtime lip-sync transport, browser-rendered 3D avatar mode, new public API contracts, model dependency installation, KYC, biometric identity verification, or production provider retries.
 
 ## Phase 1 decisions (implemented)
 

@@ -74,7 +74,7 @@ auth, workspace isolation, dashboard shell, and future avatar/knowledge/runtime 
 
 ## Current Phase
 
-Phase 21 is now implemented pending manual approval: Admin, Operations, and Observability.
+Phase 22 is now implemented pending manual approval: Self-Hosted Avatar Engine Research.
 
 ## Completed Major Slices
 
@@ -199,6 +199,10 @@ Phase 21 is now implemented pending manual approval: Admin, Operations, and Obse
 - Operations dashboard summarizes runtime failures, provider failures, trace latency, open safety events, widget error rate, and usage spikes.
 - Operations dashboard supports avatar search, avatar status filtering, provider error inspection, runtime failure inspection, recent trace inspection, safety event inspection, and usage spike review.
 - Owner/admin operations actions can suspend and unsuspend avatars; operator roles can inspect operations data without mutating avatar state.
+- Self-hosted avatar engine research is documented in `docs/research/self-hosted-avatar-engine.md`.
+- `services/ai-runtime/app/runtime/avatar_media.py` now includes a disabled-by-default `SELF_HOSTED` prototype provider behind the existing `AvatarMediaProvider` interface.
+- Self-hosted prototype modes support configured static video output and HTTP handoff to a private research render endpoint.
+- Phase 22 self-hosted provider responses normalize into existing `AvatarMediaOutput` completed, processing, and failed shapes.
 
 ## Important Decisions
 
@@ -272,17 +276,21 @@ Phase 21 is now implemented pending manual approval: Admin, Operations, and Obse
 - Phase 21 provider errors are inspected from persisted `RuntimeTrace` failure rows and provider metadata rather than a separate provider incident table.
 - Phase 21 usage spikes are soft operational signals comparing a selected window to the previous matching window.
 - Phase 21 avatar unsuspend restores the previous status from suspension metadata when available and falls back conservatively when not available.
+- Phase 22 self-hosted avatar engine work remains research/prototype only and disabled by default.
+- Phase 22 self-hosted prototype uses the existing Python avatar media provider boundary; TypeScript product code does not call model services directly.
+- Phase 22 static-video mode is only for contract testing storage, traces, usage, and playback paths without model inference.
+- Phase 22 HTTP mode is reserved for private research endpoints and is not a public API contract.
 
 ## Non-Negotiable Rules (still active)
 
 - Preserve existing architecture conventions and phase boundaries.
 - Do not add production logic for future phases ahead of their designated order.
 - Strong validation at request/action boundaries.
-- No future feature flows beyond Phase 21 operations observability: no Stripe, checkout, subscriptions, invoices, payment methods, billing portal, hard usage blocking, automatic plan mutation, paid feature gates, global platform-admin identity, cross-workspace search, queue infrastructure, external observability vendor integration, alert delivery, automatic provider retries, inline widget voice input upload, continuous listening, WebRTC avatar calls, barge-in/interruption handling, kiosk mode, operator handoff workflow, CRM sync, notifications, webhook delivery workers, 3D rendering, voice cloning, custom voice upload, public identity verification, KYC, biometric face recognition, external celebrity detection, or self-hosted avatar engine.
+- No future feature flows beyond Phase 22 self-hosted avatar engine research: no Stripe, checkout, subscriptions, invoices, payment methods, billing portal, hard usage blocking, automatic plan mutation, paid feature gates, global platform-admin identity, cross-workspace search, production GPU queue persistence, external observability vendor integration, alert delivery, automatic provider retries, customer-facing self-hosted controls, inline widget voice input upload, continuous listening, WebRTC avatar calls, realtime lip-sync transport, barge-in/interruption handling, kiosk mode, operator handoff workflow, CRM sync, notifications, webhook delivery workers, browser-rendered 3D avatar mode, voice cloning, custom voice upload, public identity verification, KYC, biometric face recognition, external celebrity detection, or production self-hosted inference.
 
 ## Current Next Step
 
-Phase 21 implementation is pending manual approval in `docs/development.md` and `docs/development/phase-21-admin-operations-observability.md`.
+Phase 22 implementation is pending manual approval in `docs/development.md` and `docs/development/phase-22-self-hosted-avatar-engine-research.md`.
 
 ## Verification Commands (manual, user-run)
 
