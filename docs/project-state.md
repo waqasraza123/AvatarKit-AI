@@ -69,12 +69,13 @@ auth, workspace isolation, dashboard shell, and future avatar/knowledge/runtime 
   - `WidgetSettings`
   - `WidgetTheme` enum
   - `WidgetPosition` enum
+  - `KioskSettings`
   - `AllowedDomain`
 - `apps/web` uses route-level server components and server actions for all auth/workspace flows.
 
 ## Current Phase
 
-Phase 22 is now implemented pending manual approval: Self-Hosted Avatar Engine Research.
+Phase 23 is now implemented pending manual approval: Kiosk Mode.
 
 ## Completed Major Slices
 
@@ -203,6 +204,15 @@ Phase 22 is now implemented pending manual approval: Self-Hosted Avatar Engine R
 - `services/ai-runtime/app/runtime/avatar_media.py` now includes a disabled-by-default `SELF_HOSTED` prototype provider behind the existing `AvatarMediaProvider` interface.
 - Self-hosted prototype modes support configured static video output and HTTP handoff to a private research render endpoint.
 - Phase 22 self-hosted provider responses normalize into existing `AvatarMediaOutput` completed, processing, and failed shapes.
+- First-class `KioskSettings` model now stores workspace-scoped kiosk configuration unique to each avatar.
+- `/dashboard/kiosk` is a real workspace-scoped kiosk management surface for published avatars.
+- Kiosk settings are editable by `OWNER`, `ADMIN`, and `OPERATOR`; `VIEWER` can inspect but not mutate.
+- Public full-screen kiosk route exists at `/kiosk/[avatarId]`.
+- Public kiosk config, session start, message, lead submission, and session end routes exist under `/api/kiosk`.
+- Kiosk conversations persist as `ConversationChannel.KIOSK` and are separable from widget, dashboard preview, API, and realtime conversations.
+- Kiosk lead capture submissions persist as `LeadSource.KIOSK` and reuse central lead validation and safety checks.
+- Kiosk runtime flows record kiosk-specific usage, runtime traces, safety events, and knowledge gaps.
+- Kiosk UI includes idle attract state, touch-first controls, browser voice transcript support when available, text fallback, reset, QR handoff, staff call, inactivity reset, and privacy timeout behavior.
 
 ## Important Decisions
 
@@ -280,17 +290,22 @@ Phase 22 is now implemented pending manual approval: Self-Hosted Avatar Engine R
 - Phase 22 self-hosted prototype uses the existing Python avatar media provider boundary; TypeScript product code does not call model services directly.
 - Phase 22 static-video mode is only for contract testing storage, traces, usage, and playback paths without model inference.
 - Phase 22 HTTP mode is reserved for private research endpoints and is not a public API contract.
+- Phase 23 kiosk mode is published-avatar-only and reuses the existing TypeScript-to-Python runtime boundary.
+- `KioskSettings` is unique per avatar and should not become a cross-avatar device profile until a later hardware/device phase exists.
+- Kiosk runtime is text-message persistence with optional browser speech transcription; raw public microphone recording, STT media storage, WebRTC, continuous listening, and barge-in are intentionally not added.
+- Kiosk inactivity is a client-visible idle reset; kiosk privacy timeout also ends active conversations and is enforced server-side before accepting messages.
+- Kiosk QR handoff and staff-call controls are links only; live staff chat, booking, payment, CRM sync, and device management are outside Phase 23.
 
 ## Non-Negotiable Rules (still active)
 
 - Preserve existing architecture conventions and phase boundaries.
 - Do not add production logic for future phases ahead of their designated order.
 - Strong validation at request/action boundaries.
-- No future feature flows beyond Phase 22 self-hosted avatar engine research: no Stripe, checkout, subscriptions, invoices, payment methods, billing portal, hard usage blocking, automatic plan mutation, paid feature gates, global platform-admin identity, cross-workspace search, production GPU queue persistence, external observability vendor integration, alert delivery, automatic provider retries, customer-facing self-hosted controls, inline widget voice input upload, continuous listening, WebRTC avatar calls, realtime lip-sync transport, barge-in/interruption handling, kiosk mode, operator handoff workflow, CRM sync, notifications, webhook delivery workers, browser-rendered 3D avatar mode, voice cloning, custom voice upload, public identity verification, KYC, biometric face recognition, external celebrity detection, or production self-hosted inference.
+- No future feature flows beyond Phase 23 kiosk mode: no Stripe, checkout, subscriptions, invoices, payment methods, billing portal, hard usage blocking, automatic plan mutation, paid feature gates, global platform-admin identity, cross-workspace search, production GPU queue persistence, external observability vendor integration, alert delivery, automatic provider retries, customer-facing self-hosted controls, inline widget voice input upload, continuous listening, WebRTC avatar calls, realtime lip-sync transport, barge-in/interruption handling, operator handoff workflow, live staff chat, kiosk hardware management, offline runtime, CRM sync, notifications, webhook delivery workers, browser-rendered 3D avatar mode, voice cloning, custom voice upload, public identity verification, KYC, biometric face recognition, external celebrity detection, or production self-hosted inference.
 
 ## Current Next Step
 
-Phase 22 implementation is pending manual approval in `docs/development.md` and `docs/development/phase-22-self-hosted-avatar-engine-research.md`.
+Phase 23 implementation is pending manual approval in `docs/development.md` and `docs/development/phase-23-kiosk-mode.md`.
 
 ## Verification Commands (manual, user-run)
 

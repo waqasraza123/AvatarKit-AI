@@ -1,5 +1,22 @@
 # Development
 
+## Phase 23 - Kiosk Mode
+
+Detailed Phase 23 kiosk notes live in `docs/development/phase-23-kiosk-mode.md`.
+
+Phase 23 adds:
+
+- `KioskSettings` schema for published-avatar kiosk configuration
+- `/dashboard/kiosk`
+- `/kiosk/[avatarId]`
+- public kiosk config, session, message, lead, and end routes under `/api/kiosk`
+- `ConversationChannel.KIOSK` conversation persistence
+- `LeadSource.KIOSK` lead submission from kiosk runtime prompts
+- kiosk-specific runtime trace, usage, safety, and knowledge-gap tagging
+- touch-first idle, reset, QR handoff, staff call, and privacy timeout behavior
+
+Verification was intentionally not run for the implementation pass requested on April 29, 2026. Before approving this phase manually, generate Prisma client, apply a migration, and follow the checklist in `docs/development/phase-23-kiosk-mode.md`.
+
 ## Phase 22 - Self-Hosted Avatar Engine Research
 
 Detailed Phase 22 research and prototype notes live in `docs/development/phase-22-self-hosted-avatar-engine-research.md` and `docs/research/self-hosted-avatar-engine.md`.

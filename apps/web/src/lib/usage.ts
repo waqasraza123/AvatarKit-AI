@@ -5,6 +5,7 @@ import type { RuntimeResponse } from "@/lib/avatar-runtime-client"
 
 export const USAGE_EVENT_TYPES = [
   "widget.session.started",
+  "kiosk.session.started",
   "api.conversation.started",
   "conversation.message.created",
   "llm.tokens.input",

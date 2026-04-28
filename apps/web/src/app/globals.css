@@ -2176,6 +2176,389 @@ select {
   color: #1d3f8c;
 }
 
+.kiosk-settings-form {
+  margin-top: 0;
+}
+
+.kiosk-form-grid,
+.kiosk-preview-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.kiosk-preview-grid {
+  margin-top: 14px;
+  grid-template-columns: repeat(4, minmax(140px, 1fr));
+}
+
+.kiosk-preview-grid div {
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  background: #f8fbff;
+  padding: 14px;
+  animation: ak-fade-up var(--motion-slow) var(--motion-ease-emphasis) both;
+  transition:
+    border-color var(--motion-medium) var(--motion-ease),
+    box-shadow var(--motion-medium) var(--motion-ease),
+    transform var(--motion-medium) var(--motion-ease);
+}
+
+.kiosk-preview-grid div:hover {
+  border-color: rgba(53, 92, 255, 0.24);
+  box-shadow: var(--motion-shadow);
+  transform: translateY(var(--motion-hover-y));
+}
+
+.kiosk-preview-grid span {
+  display: block;
+  color: #1a2a4d;
+  font-size: 1.35rem;
+  font-weight: 800;
+}
+
+.kiosk-preview-grid p {
+  margin: 4px 0 0;
+}
+
+.kiosk-shell,
+.kiosk-unavailable-shell {
+  min-height: 100vh;
+  background:
+    linear-gradient(135deg, rgba(245, 248, 255, 0.94), rgba(235, 244, 255, 0.88)),
+    #f8fbff;
+  color: var(--foreground);
+}
+
+.kiosk-shell {
+  padding: clamp(16px, 3vw, 32px);
+}
+
+.kiosk-stage {
+  position: relative;
+  min-height: calc(100vh - clamp(32px, 6vw, 64px));
+  display: grid;
+  grid-template-rows: auto minmax(260px, 1fr) auto auto;
+  gap: clamp(16px, 2vw, 24px);
+}
+
+.kiosk-avatar-panel {
+  display: grid;
+  grid-template-columns: clamp(120px, 16vw, 210px) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: clamp(18px, 3vw, 36px);
+  border-bottom: 1px solid rgba(31, 55, 96, 0.12);
+  padding-bottom: clamp(16px, 2vw, 24px);
+}
+
+.kiosk-avatar-panel h1 {
+  margin: 0;
+  font-size: clamp(2.25rem, 5vw, 5.6rem);
+  line-height: 0.95;
+  letter-spacing: 0;
+}
+
+.kiosk-avatar-panel p {
+  margin: 8px 0 0;
+  max-width: 760px;
+  color: #465873;
+  font-size: clamp(1.1rem, 2vw, 1.55rem);
+}
+
+.kiosk-avatar-visual {
+  width: 100%;
+  aspect-ratio: 1;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(31, 55, 96, 0.16);
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 22px 54px rgba(29, 41, 57, 0.14);
+}
+
+.kiosk-avatar-visual img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.kiosk-avatar-visual span {
+  color: #1a2a4d;
+  font-size: clamp(2.6rem, 5vw, 5rem);
+  font-weight: 900;
+}
+
+.kiosk-status-pill {
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  padding: 12px 18px;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.kiosk-transcript {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: clamp(8px, 1.5vw, 18px) 0;
+}
+
+.kiosk-empty-message,
+.kiosk-message {
+  max-width: min(860px, 92vw);
+  border: 1px solid rgba(31, 55, 96, 0.12);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.86);
+  padding: clamp(18px, 2.4vw, 28px);
+  box-shadow: 0 16px 38px rgba(29, 41, 57, 0.08);
+  animation: ak-fade-up var(--motion-slow) var(--motion-ease-emphasis) both;
+}
+
+.kiosk-empty-message p,
+.kiosk-message p {
+  margin: 0;
+  color: #172033;
+  font-size: clamp(1.25rem, 2.4vw, 2.1rem);
+  line-height: 1.35;
+}
+
+.kiosk-message span {
+  display: block;
+  margin-bottom: 8px;
+  color: #64748b;
+  font-size: 0.95rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.kiosk-message-visitor {
+  align-self: flex-end;
+  background: #eaf1ff;
+}
+
+.kiosk-message-avatar,
+.kiosk-message-system {
+  align-self: flex-start;
+}
+
+.kiosk-message-system {
+  border-color: #fed7aa;
+  background: #fff7ed;
+}
+
+.kiosk-controls {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) minmax(0, 1fr) minmax(140px, 180px);
+  gap: 12px;
+  align-items: end;
+}
+
+.kiosk-controls label {
+  display: grid;
+  gap: 8px;
+  color: #465873;
+  font-size: 0.95rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.kiosk-controls input {
+  min-height: 72px;
+  border: 1px solid rgba(31, 55, 96, 0.16);
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 0 18px;
+  color: #172033;
+  font: inherit;
+  font-size: clamp(1.05rem, 2vw, 1.45rem);
+}
+
+.kiosk-voice-button,
+.kiosk-send-button,
+.kiosk-secondary-actions button,
+.kiosk-secondary-actions a,
+.kiosk-idle-overlay {
+  min-height: 72px;
+  border: 0;
+  border-radius: 14px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 900;
+  text-decoration: none;
+  transition:
+    transform var(--motion-medium) var(--motion-ease),
+    box-shadow var(--motion-medium) var(--motion-ease),
+    opacity var(--motion-medium) var(--motion-ease);
+}
+
+.kiosk-voice-button,
+.kiosk-send-button {
+  background: var(--primary);
+  color: #ffffff;
+  box-shadow: 0 16px 32px rgba(53, 92, 255, 0.22);
+}
+
+.kiosk-voice-button.is-listening {
+  animation: ak-recording-pulse 1.3s var(--motion-ease) infinite;
+}
+
+.kiosk-voice-button:disabled,
+.kiosk-send-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
+  box-shadow: none;
+}
+
+.kiosk-voice-button:hover:not(:disabled),
+.kiosk-send-button:hover:not(:disabled),
+.kiosk-secondary-actions button:hover,
+.kiosk-secondary-actions a:hover {
+  transform: translateY(var(--motion-hover-y));
+  box-shadow: 0 18px 38px rgba(29, 41, 57, 0.16);
+}
+
+.kiosk-secondary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.kiosk-secondary-actions button,
+.kiosk-secondary-actions a {
+  min-height: 54px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(31, 55, 96, 0.14);
+  background: #ffffff;
+  color: #1f3760;
+  padding: 0 16px;
+}
+
+.kiosk-error {
+  margin: 0;
+  color: #b42318;
+  font-weight: 800;
+}
+
+.kiosk-lead-card {
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(31, 55, 96, 0.14);
+  border-radius: 18px;
+  background: #ffffff;
+  padding: clamp(16px, 2.5vw, 24px);
+  box-shadow: 0 16px 38px rgba(29, 41, 57, 0.08);
+  animation: ak-fade-up var(--motion-slow) var(--motion-ease-emphasis) both;
+}
+
+.kiosk-lead-card h2 {
+  margin: 0;
+  color: #172033;
+  font-size: clamp(1.2rem, 2vw, 1.7rem);
+  line-height: 1.25;
+}
+
+.kiosk-lead-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.kiosk-lead-grid input {
+  min-height: 58px;
+  border: 1px solid rgba(31, 55, 96, 0.16);
+  border-radius: 12px;
+  padding: 0 14px;
+  font: inherit;
+  font-size: 1rem;
+}
+
+.kiosk-lead-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.kiosk-lead-actions button {
+  min-height: 52px;
+  border: 0;
+  border-radius: 12px;
+  padding: 0 18px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 900;
+}
+
+.kiosk-lead-actions button:first-child {
+  background: var(--primary);
+  color: #ffffff;
+}
+
+.kiosk-lead-actions button:last-child {
+  border: 1px solid rgba(31, 55, 96, 0.14);
+  background: #ffffff;
+  color: #1f3760;
+}
+
+.kiosk-lead-status {
+  margin: 0;
+  color: #027a48;
+  font-weight: 800;
+}
+
+.kiosk-idle-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  gap: 18px;
+  background: rgba(248, 251, 255, 0.94);
+  color: #172033;
+  padding: clamp(24px, 6vw, 72px);
+  text-align: center;
+  z-index: 5;
+}
+
+.kiosk-idle-overlay span {
+  max-width: 980px;
+  font-size: clamp(2rem, 6vw, 5.8rem);
+  line-height: 1.02;
+  font-weight: 900;
+}
+
+.kiosk-idle-overlay strong {
+  border-radius: 999px;
+  background: var(--primary);
+  color: #ffffff;
+  padding: 18px 28px;
+  font-size: clamp(1.05rem, 2vw, 1.45rem);
+}
+
+.kiosk-unavailable-shell {
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.kiosk-unavailable-panel {
+  width: min(560px, 100%);
+  border: 1px solid var(--panel-border);
+  border-radius: 16px;
+  background: #ffffff;
+  padding: clamp(24px, 5vw, 44px);
+  box-shadow: var(--motion-shadow);
+}
+
+.kiosk-unavailable-panel h1,
+.kiosk-unavailable-panel p {
+  margin-top: 0;
+}
+
 .developer-secret-value {
   display: block;
   margin-top: 8px;
@@ -2588,6 +2971,11 @@ select {
   .domain-empty-state:hover,
   .domain-row:hover,
   .embed-instructions:hover,
+  .kiosk-preview-grid div:hover,
+  .kiosk-voice-button:hover:not(:disabled),
+  .kiosk-send-button:hover:not(:disabled),
+  .kiosk-secondary-actions button:hover,
+  .kiosk-secondary-actions a:hover,
   .developer-list-card:hover,
   .usage-metric:hover,
   .billing-current-grid > div:hover,
@@ -2636,6 +3024,9 @@ select {
   .embed-avatar-grid,
   .embed-management-grid,
   .embed-avatar-media,
+  .kiosk-form-grid,
+  .kiosk-preview-grid,
+  .kiosk-lead-grid,
   .usage-summary-grid,
   .billing-current-grid,
   .billing-limit-grid,
@@ -2652,5 +3043,26 @@ select {
 
   .preview-voice-actions {
     justify-content: flex-start;
+  }
+
+  .kiosk-shell {
+    padding: 14px;
+  }
+
+  .kiosk-stage {
+    min-height: calc(100vh - 28px);
+  }
+
+  .kiosk-avatar-panel,
+  .kiosk-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .kiosk-avatar-visual {
+    max-width: 220px;
+  }
+
+  .kiosk-status-pill {
+    width: fit-content;
   }
 }

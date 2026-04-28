@@ -16,6 +16,10 @@ import {
 } from "@/lib/avatar"
 import { hasWorkspaceRole } from "@/lib/workspace"
 import {
+  KioskPublicError,
+  fetchOrCreateKioskSettings
+} from "@/lib/kiosk"
+import {
   WidgetPublicError,
   assertWidgetDomainAllowed
 } from "@/lib/widget"
@@ -531,6 +535,131 @@ export async function submitWidgetLead(avatarId: string, request: Request, body:
       message: parsed.values.message ?? undefined,
       metadata: {
         domain: domainAccess.domain,
+        userAgent: request.headers.get("user-agent")?.slice(0, 300) ?? null,
+        duplicateBehavior: "updated_existing_primary_lead",
+        safetyFlagged: Boolean(leadSafety),
+        safetyReason: leadSafety?.reason ?? null
+      }
+    },
+    select: {
+      id: true,
+      status: true
+    }
+  })
+
+  await prisma.conversation.update({
+    where: { id: conversation.id },
+    data: { updatedAt: new Date() }
+  })
+
+  return {
+    leadId: lead.id,
+    status: lead.status,
+    duplicateBehavior
+  }
+}
+
+export async function submitKioskLead(avatarId: string, request: Request, body: unknown): Promise<{ leadId: string; status: LeadStatus; duplicateBehavior: "created" | "updated" }> {
+  const avatarRow = await prisma.avatar.findUnique({
+    where: { id: avatarId },
+    select: { workspaceId: true }
+  })
+
+  if (!avatarRow) {
+    throw new KioskPublicError(404, "avatar_not_found", "Avatar was not found.")
+  }
+
+  const avatar = await fetchAvatarByIdAndWorkspace(avatarRow.workspaceId, avatarId)
+
+  if (!avatar || !isAvatarPublicRuntimeEligible(avatar) || avatar.status !== AvatarStatus.PUBLISHED) {
+    throw new KioskPublicError(404, "avatar_unavailable", "Avatar is not available for kiosk use.")
+  }
+
+  const settings = await fetchOrCreateKioskSettings(avatar)
+  if (!settings.enabled || !settings.leadCaptureEnabled) {
+    throw new KioskPublicError(403, "lead_capture_disabled", "Lead capture is not enabled for this kiosk.")
+  }
+
+  const parsed = validateLeadPayload(body)
+  if (Object.keys(parsed.errors).length > 0) {
+    throw new KioskPublicError(400, "invalid_lead", Object.values(parsed.errors)[0] ?? "Lead details are invalid.")
+  }
+
+  const conversation = await prisma.conversation.findFirst({
+    where: {
+      id: parsed.values.conversationId,
+      workspaceId: avatar.workspaceId,
+      avatarId: avatar.id,
+      channel: ConversationChannel.KIOSK
+    },
+    select: {
+      id: true,
+      lead: {
+        select: { id: true }
+      }
+    }
+  })
+
+  if (!conversation) {
+    throw new KioskPublicError(404, "conversation_not_found", "Conversation was not found for this kiosk session.")
+  }
+
+  const leadSafety = assessLeadInputSafety(parsed.values)
+  if (leadSafety) {
+    await recordSafetyEvent({
+      workspaceId: avatar.workspaceId,
+      avatarId: avatar.id,
+      conversationId: conversation.id,
+      eventType: leadSafety.eventType,
+      severity: leadSafety.severity,
+      action: leadSafety.action,
+      source: SafetySource.LEAD_CAPTURE,
+      inputExcerpt: [
+        parsed.values.name,
+        parsed.values.email,
+        parsed.values.phone,
+        parsed.values.message
+      ].filter(Boolean).join(" "),
+      reason: leadSafety.reason,
+      metadata: {
+        ...leadSafety.metadata,
+        surface: "kiosk"
+      }
+    })
+
+    if (leadSafety.action === SafetyAction.BLOCK) {
+      throw new KioskPublicError(400, "lead_safety_blocked", "Lead details could not be accepted because the message appears unsafe.")
+    }
+  }
+
+  const duplicateBehavior = conversation.lead ? "updated" : "created"
+  const lead = await prisma.lead.upsert({
+    where: { conversationId: conversation.id },
+    create: {
+      workspaceId: avatar.workspaceId,
+      avatarId: avatar.id,
+      conversationId: conversation.id,
+      source: LeadSource.KIOSK,
+      status: LeadStatus.NEW,
+      name: parsed.values.name,
+      email: parsed.values.email,
+      phone: parsed.values.phone,
+      message: parsed.values.message,
+      metadata: {
+        surface: "kiosk",
+        userAgent: request.headers.get("user-agent")?.slice(0, 300) ?? null,
+        safetyFlagged: Boolean(leadSafety),
+        safetyReason: leadSafety?.reason ?? null
+      }
+    },
+    update: {
+      avatarId: avatar.id,
+      name: parsed.values.name ?? undefined,
+      email: parsed.values.email ?? undefined,
+      phone: parsed.values.phone ?? undefined,
+      message: parsed.values.message ?? undefined,
+      metadata: {
+        surface: "kiosk",
         userAgent: request.headers.get("user-agent")?.slice(0, 300) ?? null,
         duplicateBehavior: "updated_existing_primary_lead",
         safetyFlagged: Boolean(leadSafety),

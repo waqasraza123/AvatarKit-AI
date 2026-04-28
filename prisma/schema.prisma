@@ -38,6 +38,7 @@ model Workspace {
   knowledgeSources KnowledgeSource[]
   knowledgeChunks  KnowledgeChunk[]
   widgetSettings  WidgetSettings[]
+  kioskSettings   KioskSettings[]
   allowedDomains  AllowedDomain[]
   usageEvents     UsageEvent[]
   safetyEvents    SafetyEvent[]
@@ -75,6 +76,7 @@ model Avatar {
   photoAssets     AvatarAsset[]   @relation("AvatarPhotoAssets")
   consentRecords  ConsentRecord[]
   widgetSettings  WidgetSettings[]
+  kioskSettings   KioskSettings[]
   leads           Lead[]
   conversations   Conversation[]
   usageEvents     UsageEvent[]
@@ -105,6 +107,31 @@ model WidgetSettings {
   @@unique([avatarId])
   @@index([workspaceId])
   @@index([workspaceId, avatarId])
+}
+
+model KioskSettings {
+  id                       String   @id @default(cuid())
+  workspaceId              String
+  avatarId                 String
+  enabled                  Boolean  @default(false)
+  idleGreeting             String
+  inactivityTimeoutSeconds Int      @default(90)
+  privacyTimeoutSeconds    Int      @default(180)
+  allowedLanguage          String?
+  leadCaptureEnabled       Boolean  @default(true)
+  qrHandoffUrl             String?
+  staffCallLabel           String?
+  staffCallUrl             String?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  avatar    Avatar    @relation(fields: [avatarId], references: [id], onDelete: Cascade)
+
+  @@unique([avatarId])
+  @@index([workspaceId])
+  @@index([workspaceId, avatarId])
+  @@index([enabled])
 }
 
 model AllowedDomain {
@@ -730,6 +757,7 @@ enum SafetySource {
   AVATAR_SETUP
   DASHBOARD_PREVIEW
   WIDGET_RUNTIME
+  KIOSK_RUNTIME
   API_RUNTIME
   LEAD_CAPTURE
   SYSTEM
@@ -755,6 +783,7 @@ enum KnowledgeGapReason {
 enum KnowledgeGapSource {
   DASHBOARD_PREVIEW
   WIDGET_RUNTIME
+  KIOSK_RUNTIME
   API_RUNTIME
   SYSTEM
 }

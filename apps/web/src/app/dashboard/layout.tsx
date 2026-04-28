@@ -10,6 +10,7 @@ const navigationItems = [
   { label: "Conversations", href: "/dashboard/conversations" },
   { label: "Leads", href: "/dashboard/leads" },
   { label: "Embed", href: "/dashboard/embed" },
+  { label: "Kiosk", href: "/dashboard/kiosk" },
   { label: "Usage", href: "/dashboard/usage" },
   { label: "Billing", href: "/dashboard/billing" },
   { label: "Safety", href: "/dashboard/safety" },

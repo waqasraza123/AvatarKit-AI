@@ -215,6 +215,18 @@
   - Research findings must document 2D talking-head, realtime lip-sync, 3D avatar, GPU queue, face-validation, licensing, quality, latency, and failure-mode concerns.
   - Product, widget, SDK, public API, and dashboard routes must not call self-hosted model services directly.
 - Phase 22 must not add production self-hosted inference, customer-facing self-hosted controls, GPU queue persistence, WebRTC avatar calls, realtime lip-sync transport, browser-rendered 3D avatar mode, new public API contracts, model dependency installation, KYC, biometric identity verification, or production provider retries.
+- Phase 23 adds kiosk mode only:
+  - kiosk mode is configured from `/dashboard/kiosk` and is limited to published, public-runtime-eligible avatars
+  - `KioskSettings` is workspace-scoped and unique per avatar
+  - public kiosk routes expose only safe display and kiosk settings fields
+  - public kiosk sessions persist as `ConversationChannel.KIOSK`
+  - kiosk runtime messages must pass through the TypeScript route boundary and existing private runtime service
+  - kiosk lead submissions must persist as `LeadSource.KIOSK` and reuse central lead validation and safety checks
+  - kiosk conversations must record runtime traces, usage, safety events, and knowledge gaps with kiosk-specific channel/source metadata
+  - inactivity reset must clear the visible transcript and return to idle state
+  - privacy timeout must end active kiosk conversations and reject stale message submissions server-side
+  - browser voice input may be used only as a text transcript source with text fallback
+- Phase 23 must not add WebRTC avatar calls, continuous listening, barge-in, live staff chat, kiosk hardware management, offline runtime, custom kiosk lead forms, payment or booking flows, CRM integrations, production self-hosted inference, browser-rendered 3D avatar mode, or new public API/SDK contracts.
 
 ## Phase 1 decisions (implemented)
 
