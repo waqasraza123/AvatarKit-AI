@@ -16,6 +16,9 @@ auth, workspace isolation, dashboard shell, and future avatar/knowledge/runtime 
 ## Current Architecture
 
 - Repository now contains a working monorepo with web, api, worker, and Python runtime service stubs.
+- Versioned Git hooks live in `.githooks`; `pnpm setup:githooks` configures clones to use them.
+- Push verification is centralized in `scripts/verify-push.sh` and blocks pushes unless `pnpm build` passes.
+- `pnpm safe-push` is the explicit automation-friendly push command and runs the same verifier before `git push`.
 - Web app implements local auth, session, and workspace domain logic for Phase 1.
 - Prisma schema includes:
   - `User`

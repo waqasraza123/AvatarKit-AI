@@ -17,6 +17,7 @@ These files define the current product state, runnable workflow, architecture bo
 
 ```bash
 pnpm install
+pnpm setup:githooks
 cp .env.example .env
 pnpm docker:up
 pnpm db:generate
@@ -29,6 +30,36 @@ Run additional services when your change needs them:
 ```bash
 pnpm dev:api
 pnpm dev:ai-runtime
+```
+
+## Safe Push Workflow
+
+This repository uses versioned Git hooks from `.githooks`.
+
+Set them up once per clone:
+
+```bash
+pnpm setup:githooks
+```
+
+Normal `git push` runs `.githooks/pre-push`, which delegates to `scripts/verify-push.sh`. The verifier blocks the push unless this command passes:
+
+```bash
+pnpm build
+```
+
+For automation and AI agents, use the explicit wrapper:
+
+```bash
+pnpm safe-push
+```
+
+`pnpm safe-push` runs the same verifier first, then executes `git push` with any extra arguments passed after the command.
+
+To run the push verifier without pushing:
+
+```bash
+pnpm verify:push
 ```
 
 ## Contribution Rules
