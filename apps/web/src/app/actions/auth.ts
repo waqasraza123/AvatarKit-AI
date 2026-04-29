@@ -1,8 +1,14 @@
 "use server"
 
 import { redirect } from "next/navigation"
+import { headers } from "next/headers"
 import { hashPassword, verifyPassword } from "@/lib/password"
 import { prisma } from "@/lib/prisma"
+import {
+  RateLimitExceededError,
+  assertRateLimit,
+  rateLimitPolicies
+} from "@/lib/rate-limit-policies"
 import { createSessionForUser, clearSessionCookie } from "@/lib/session"
 
 export type AuthActionState = {
@@ -27,6 +33,13 @@ function normalizeRedirect(next?: FormDataEntryValue | null): string {
   return next
 }
 
+async function requestIp(): Promise<string> {
+  const headerList = await headers()
+  return headerList.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    headerList.get("x-real-ip")?.trim() ||
+    "unknown"
+}
+
 export async function signInAction(
   _state: AuthActionState,
   formData: FormData
@@ -34,6 +47,16 @@ export async function signInAction(
   const rawEmail = String(formData.get("email") ?? "").trim().toLowerCase()
   const password = String(formData.get("password") ?? "")
   const next = normalizeRedirect(formData.get("next"))
+
+  try {
+    await assertRateLimit(rateLimitPolicies.authAttempt, ["sign-in", rawEmail || "unknown", await requestIp()])
+  } catch (error) {
+    if (error instanceof RateLimitExceededError) {
+      return { status: "error", message: "Too many requests. Please try again shortly." }
+    }
+
+    throw error
+  }
 
   if (!rawEmail || !rawEmail.includes("@")) {
     return { status: "error", message: "Enter a valid email address." }
@@ -74,6 +97,16 @@ export async function signUpAction(
   const password = String(formData.get("password") ?? "")
   const confirmPassword = String(formData.get("confirmPassword") ?? "")
   const next = normalizeRedirect(formData.get("next"))
+
+  try {
+    await assertRateLimit(rateLimitPolicies.authAttempt, ["sign-up", rawEmail || "unknown", await requestIp()])
+  } catch (error) {
+    if (error instanceof RateLimitExceededError) {
+      return { status: "error", message: "Too many requests. Please try again shortly." }
+    }
+
+    throw error
+  }
 
   if (!rawEmail || !rawEmail.includes("@")) {
     return { status: "error", message: "Enter a valid email address." }

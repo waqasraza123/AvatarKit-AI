@@ -1,4 +1,11 @@
 import { KioskPublicError, getPublicKioskConfig } from "@/lib/kiosk"
+import {
+  RateLimitExceededError,
+  assertRateLimit,
+  getRequestIp,
+  rateLimitErrorPayload,
+  rateLimitPolicies
+} from "@/lib/rate-limit-policies"
 
 export const dynamic = "force-dynamic"
 
@@ -9,15 +16,23 @@ function jsonResponse(payload: unknown, status: number) {
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: RouteParams }
 ) {
   const { avatarId } = await params
 
   try {
+    await assertRateLimit(rateLimitPolicies.kioskConfig, [
+      avatarId,
+      getRequestIp(request)
+    ])
     const config = await getPublicKioskConfig(avatarId)
     return jsonResponse(config, 200)
   } catch (error) {
+    if (error instanceof RateLimitExceededError) {
+      return jsonResponse(rateLimitErrorPayload(error), 429)
+    }
+
     if (error instanceof KioskPublicError) {
       return jsonResponse({
         status: "error",

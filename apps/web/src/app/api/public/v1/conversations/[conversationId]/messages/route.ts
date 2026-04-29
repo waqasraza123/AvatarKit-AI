@@ -3,6 +3,13 @@ import {
   authenticatePublicApiRequest,
   sendPublicApiConversationMessage
 } from "@/lib/public-api"
+import {
+  RateLimitExceededError,
+  assertRateLimit,
+  getRequestIp,
+  rateLimitErrorPayload,
+  rateLimitPolicies
+} from "@/lib/rate-limit-policies"
 
 export const dynamic = "force-dynamic"
 
@@ -31,9 +38,19 @@ export async function POST(
 
   try {
     const context = await authenticatePublicApiRequest(request, "conversations:write")
+    await assertRateLimit(rateLimitPolicies.publicApiMessage, [
+      context.workspaceId,
+      context.apiKeyPrefix,
+      conversationId,
+      getRequestIp(request)
+    ])
     const message = await sendPublicApiConversationMessage(context, conversationId, body)
     return jsonResponse({ status: "ok", ...message }, 200)
   } catch (error) {
+    if (error instanceof RateLimitExceededError) {
+      return jsonResponse(rateLimitErrorPayload(error), 429)
+    }
+
     if (error instanceof PublicApiError) {
       return jsonResponse({
         status: "error",

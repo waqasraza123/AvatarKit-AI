@@ -9,6 +9,7 @@ import {
 } from "@prisma/client"
 import { formatWorkspaceLocalTime } from "@/lib/avatar"
 import { prisma } from "@/lib/prisma"
+import { getConfigurationReadiness, type ReadinessSection } from "@/lib/readiness"
 import { hasWorkspaceRole } from "@/lib/workspace"
 
 export const OPERATIONS_PERIODS = ["24h", "7d", "30d"] as const
@@ -78,6 +79,7 @@ export type OperationsDashboardData = {
   recentTraces: OperationsTraceItem[]
   safetyEvents: OperationsSafetyItem[]
   usageSpikes: OperationsUsageSpike[]
+  readiness: ReadinessSection[]
 }
 
 const AVATAR_STATUSES = [
@@ -454,6 +456,7 @@ export async function fetchOperationsDashboardData(workspaceId: string, filters:
       reason: row.reason,
       createdAt: formatWorkspaceLocalTime(row.createdAt)
     })),
-    usageSpikes
+    usageSpikes,
+    readiness: getConfigurationReadiness()
   }
 }

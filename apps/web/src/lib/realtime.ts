@@ -10,6 +10,7 @@ import { prisma } from "@/lib/prisma"
 import { recordUsageEvent } from "@/lib/usage"
 
 const realtimeSessionTtlMs = 30 * 60 * 1000
+export const REALTIME_MESSAGE_MAX_LENGTH = 800
 
 export const realtimeClientEventTypes = [
   "session.start",

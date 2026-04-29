@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation"
 import { revalidatePath } from "next/cache"
+import { recordMutationAuditEvent } from "@/lib/audit"
 import { getWorkspaceContextForRequest } from "@/lib/workspace"
 import { prisma } from "@/lib/prisma"
 import {
@@ -77,6 +78,16 @@ export async function updateSafetyEventStatusAction(formData: FormData): Promise
     }
   })
 
+  await recordMutationAuditEvent({
+    workspaceId: context.workspace.id,
+    actorUserId: context.user.id,
+    eventType: "safety_event.status_updated",
+    metadata: {
+      safetyEventId: safetyEvent.id,
+      targetStatus
+    }
+  })
+
   revalidatePath("/dashboard/safety")
   if (safetyEvent.conversationId) {
     revalidatePath(`/dashboard/conversations/${safetyEvent.conversationId}`)
@@ -112,6 +123,17 @@ export async function suspendAvatarFromSafetyAction(formData: FormData): Promise
   if (!updated) {
     redirect(appendSafetyError(returnPath, "missing_avatar"))
   }
+
+  await recordMutationAuditEvent({
+    workspaceId: context.workspace.id,
+    actorUserId: context.user.id,
+    avatarId,
+    eventType: "avatar.suspended",
+    metadata: {
+      source: "safety",
+      reason
+    }
+  })
 
   revalidatePath("/dashboard/safety")
   revalidatePath("/dashboard/avatars")

@@ -60,6 +60,8 @@ export const SAFETY_SOURCES = [
   SafetySource.AVATAR_SETUP,
   SafetySource.DASHBOARD_PREVIEW,
   SafetySource.WIDGET_RUNTIME,
+  SafetySource.KIOSK_RUNTIME,
+  SafetySource.API_RUNTIME,
   SafetySource.LEAD_CAPTURE,
   SafetySource.SYSTEM
 ] as const

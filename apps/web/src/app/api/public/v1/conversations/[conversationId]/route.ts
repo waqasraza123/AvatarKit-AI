@@ -3,6 +3,13 @@ import {
   authenticatePublicApiRequest,
   getPublicApiConversationStatus
 } from "@/lib/public-api"
+import {
+  RateLimitExceededError,
+  assertRateLimit,
+  getRequestIp,
+  rateLimitErrorPayload,
+  rateLimitPolicies
+} from "@/lib/rate-limit-policies"
 
 export const dynamic = "force-dynamic"
 
@@ -20,9 +27,19 @@ export async function GET(
 
   try {
     const context = await authenticatePublicApiRequest(request, "conversations:read")
+    await assertRateLimit(rateLimitPolicies.publicApiConversation, [
+      context.workspaceId,
+      context.apiKeyPrefix,
+      conversationId,
+      getRequestIp(request)
+    ])
     const conversation = await getPublicApiConversationStatus(context, conversationId)
     return jsonResponse({ status: "ok", conversation }, 200)
   } catch (error) {
+    if (error instanceof RateLimitExceededError) {
+      return jsonResponse(rateLimitErrorPayload(error), 429)
+    }
+
     if (error instanceof PublicApiError) {
       return jsonResponse({
         status: "error",

@@ -8,6 +8,7 @@ import {
 import { prisma } from "@/lib/prisma"
 import {
   fetchActiveRealtimeSession,
+  REALTIME_MESSAGE_MAX_LENGTH,
   parseRealtimeMessagePayload,
   realtimeStreamResponse,
   recordRealtimeTrace,
@@ -56,6 +57,14 @@ export async function POST(
       status: "error",
       code: "message_too_short",
       message: "Enter at least two characters."
+    }, 400, origin)
+  }
+
+  if (payload.message.length > REALTIME_MESSAGE_MAX_LENGTH) {
+    return jsonResponse({
+      status: "error",
+      code: "message_too_long",
+      message: `Message must be ${REALTIME_MESSAGE_MAX_LENGTH} characters or fewer.`
     }, 400, origin)
   }
 

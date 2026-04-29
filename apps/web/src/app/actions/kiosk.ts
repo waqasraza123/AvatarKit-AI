@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { AvatarStatus, WorkspaceRole } from "@prisma/client"
+import { recordMutationAuditEvent } from "@/lib/audit"
 import { parseKioskSettingsInput } from "@/lib/kiosk"
 import { prisma } from "@/lib/prisma"
 import { getWorkspaceContextForRequest, hasWorkspaceRole } from "@/lib/workspace"
@@ -85,6 +86,21 @@ export async function updateKioskSettingsAction(
       qrHandoffUrl: parsed.qrHandoffUrl,
       staffCallLabel: parsed.staffCallLabel,
       staffCallUrl: parsed.staffCallUrl
+    }
+  })
+
+  await recordMutationAuditEvent({
+    workspaceId: context.workspace.id,
+    actorUserId: context.user.id,
+    avatarId: avatar.id,
+    eventType: parsed.enabled ? "kiosk_settings.enabled_or_updated" : "kiosk_settings.disabled_or_updated",
+    metadata: {
+      enabled: parsed.enabled,
+      inactivityTimeoutSeconds: parsed.inactivityTimeoutSeconds,
+      privacyTimeoutSeconds: parsed.privacyTimeoutSeconds,
+      leadCaptureEnabled: parsed.leadCaptureEnabled,
+      hasQrHandoffUrl: Boolean(parsed.qrHandoffUrl),
+      hasStaffCallUrl: Boolean(parsed.staffCallUrl)
     }
   })
 

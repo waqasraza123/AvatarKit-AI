@@ -75,6 +75,16 @@ export const widgetBrowserScript = `(() => {
       .replace(/'/g, "&#039;");
   }
 
+  function apiMessage(payload, fallback) {
+    if (payload && payload.error && typeof payload.error.message === "string") {
+      return payload.error.message;
+    }
+    if (payload && typeof payload.message === "string") {
+      return payload.message;
+    }
+    return fallback;
+  }
+
   function css() {
     const position = state.config?.position || requestedPosition;
     const align = position === "bottom-left" ? "left: 22px;" : "right: 22px;";
@@ -244,7 +254,7 @@ export const widgetBrowserScript = `(() => {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(payload.message || "Widget is not available.");
+        throw new Error(apiMessage(payload, "Widget is not available."));
       }
       state.config = {
         ...payload,
@@ -300,7 +310,7 @@ export const widgetBrowserScript = `(() => {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(payload.message || "Avatar response failed.");
+        throw new Error(apiMessage(payload, "Avatar response failed."));
       }
       state.conversationId = payload.conversationId || state.conversationId;
       state.visitorId = payload.visitorId || state.visitorId;
@@ -337,7 +347,7 @@ export const widgetBrowserScript = `(() => {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(payload.message || "Realtime session failed.");
+        throw new Error(apiMessage(payload, "Realtime session failed."));
       }
       state.realtimeSessionId = payload.sessionId || "";
       state.conversationId = payload.conversationId || state.conversationId;
@@ -467,7 +477,7 @@ export const widgetBrowserScript = `(() => {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(payload.message || "Lead details could not be saved.");
+        throw new Error(apiMessage(payload, "Lead details could not be saved."));
       }
       state.leadSubmitted = true;
       state.leadCapture = null;

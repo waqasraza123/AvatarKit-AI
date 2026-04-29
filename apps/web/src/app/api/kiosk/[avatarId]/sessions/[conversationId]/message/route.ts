@@ -1,4 +1,8 @@
 import { KioskPublicError, processKioskMessage } from "@/lib/kiosk"
+import {
+  RateLimitExceededError,
+  rateLimitErrorPayload
+} from "@/lib/rate-limit-policies"
 
 export const dynamic = "force-dynamic"
 
@@ -29,6 +33,10 @@ export async function POST(
     const result = await processKioskMessage(avatarId, conversationId, request, body)
     return jsonResponse(result, 200)
   } catch (error) {
+    if (error instanceof RateLimitExceededError) {
+      return jsonResponse(rateLimitErrorPayload(error), 429)
+    }
+
     if (error instanceof KioskPublicError) {
       return jsonResponse({
         status: "error",

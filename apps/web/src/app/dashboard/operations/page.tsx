@@ -355,6 +355,49 @@ function UsageSpikeList({ spikes }: { spikes: OperationsUsageSpike[] }) {
   )
 }
 
+function readinessClass(state: string): string {
+  if (state === "configured") {
+    return "status-pill status-pill-muted"
+  }
+
+  if (state === "optional") {
+    return "status-pill status-pill-muted"
+  }
+
+  if (state === "warning") {
+    return "status-pill status-pill-warning"
+  }
+
+  return "status-pill status-pill-danger"
+}
+
+function ReadinessChecklist({ data }: { data: OperationsDashboardData }) {
+  return (
+    <section className="content-card">
+      <div className="content-card-header">
+        <div>
+          <p className="eyebrow">Configuration readiness</p>
+          <h2>Production setup indicators</h2>
+        </div>
+      </div>
+      <div className="developer-list">
+        {data.readiness.flatMap(section => section.items.map(item => (
+          <article className="developer-list-card" key={`${section.title}-${item.label}`}>
+            <div>
+              <p className="eyebrow">{section.title}</p>
+              <h3>{item.label}</h3>
+              <p className="avatar-meta">{item.detail}</p>
+              <p className="avatar-meta">Variables: {item.variables.join(", ")}</p>
+              {item.docsHref ? <p className="avatar-meta">Docs: {item.docsHref}</p> : null}
+            </div>
+            <span className={readinessClass(item.state)}>{item.state}</span>
+          </article>
+        )))}
+      </div>
+    </section>
+  )
+}
+
 export default async function DashboardOperationsPage({
   searchParams
 }: {
@@ -409,6 +452,9 @@ export default async function DashboardOperationsPage({
           <Link className="avatarkit-link-button" href="/dashboard/conversations">
             Open conversations
           </Link>
+          <Link className="avatarkit-link-button" href="/dashboard/operations/audit-log">
+            Open audit log
+          </Link>
         </div>
         {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
         {!canManage ? <p className="form-helper">Operators can inspect operations data. Only owners and admins can suspend or unsuspend avatars.</p> : null}
@@ -437,6 +483,7 @@ export default async function DashboardOperationsPage({
       />
       <SafetyTable events={data.safetyEvents} />
       <UsageSpikeList spikes={data.usageSpikes} />
+      <ReadinessChecklist data={data} />
     </main>
   )
 }

@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation"
 import { revalidatePath } from "next/cache"
 import { AvatarStatus, RuntimeTraceStatus, SafetyEventType } from "@prisma/client"
+import { recordMutationAuditEvent } from "@/lib/audit"
 import { canManageOperations } from "@/lib/operations"
 import { prisma } from "@/lib/prisma"
 import { suspendAvatarForSafety } from "@/lib/safety"
@@ -90,6 +91,15 @@ export async function suspendAvatarFromOperationsAction(formData: FormData): Pro
       }
     }
   }).catch(() => undefined)
+  await recordMutationAuditEvent({
+    workspaceId: context.workspace.id,
+    actorUserId: context.user.id,
+    avatarId,
+    eventType: "avatar.suspended",
+    metadata: {
+      source: "operations"
+    }
+  })
 
   revalidatePath("/dashboard/operations")
   revalidatePath("/dashboard/avatars")
@@ -156,6 +166,16 @@ export async function unsuspendAvatarFromOperationsAction(formData: FormData): P
       }
     }
   }).catch(() => undefined)
+  await recordMutationAuditEvent({
+    workspaceId: context.workspace.id,
+    actorUserId: context.user.id,
+    avatarId: avatar.id,
+    eventType: "avatar.unsuspended",
+    metadata: {
+      source: "operations",
+      restoredStatus
+    }
+  })
 
   revalidatePath("/dashboard/operations")
   revalidatePath("/dashboard/avatars")

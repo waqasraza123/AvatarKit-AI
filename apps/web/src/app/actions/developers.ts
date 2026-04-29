@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { WorkspaceRole } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
+import { recordMutationAuditEvent } from "@/lib/audit"
 import {
   createPublicApiKeySecret,
   createWebhookSigningSecret,
@@ -10,6 +11,11 @@ import {
   normalizeWebhookUrl,
   parseWebhookEvents
 } from "@/lib/public-api"
+import {
+  RateLimitExceededError,
+  assertRateLimit,
+  rateLimitPolicies
+} from "@/lib/rate-limit-policies"
 import { getWorkspaceContextForRequest, hasWorkspaceRole } from "@/lib/workspace"
 
 export type DeveloperActionState = {
@@ -48,6 +54,19 @@ export async function createApiKeyAction(
     return actionError("Only owners and admins can create API keys.")
   }
 
+  try {
+    await assertRateLimit(rateLimitPolicies.apiKeyCreate, [
+      context.workspace.id,
+      context.user.id
+    ])
+  } catch (error) {
+    if (error instanceof RateLimitExceededError) {
+      return actionError("Too many API key creation attempts. Please try again shortly.")
+    }
+
+    throw error
+  }
+
   const normalized = normalizeApiKeyName(formData.get("name"))
   if (!normalized.name) {
     return actionError(normalized.error ?? "Enter a valid API key name.", {
@@ -56,7 +75,7 @@ export async function createApiKeyAction(
   }
 
   const secret = createPublicApiKeySecret()
-  await prisma.apiKey.create({
+  const apiKey = await prisma.apiKey.create({
     data: {
       workspaceId: context.workspace.id,
       name: normalized.name,
@@ -64,6 +83,19 @@ export async function createApiKeyAction(
       keyHash: secret.keyHash,
       scopes: ["avatars:read", "conversations:write", "conversations:read", "leads:write"],
       createdByUserId: context.user.id
+    },
+    select: { id: true }
+  })
+
+  await recordMutationAuditEvent({
+    workspaceId: context.workspace.id,
+    actorUserId: context.user.id,
+    eventType: "api_key.created",
+    metadata: {
+      apiKeyName: normalized.name,
+      apiKeyId: apiKey.id,
+      apiKeyPrefix: secret.prefix,
+      scopes: ["avatars:read", "conversations:write", "conversations:read", "leads:write"]
     }
   })
 
@@ -86,7 +118,7 @@ export async function revokeApiKeyAction(formData: FormData): Promise<void> {
     return
   }
 
-  await prisma.apiKey.updateMany({
+  const updated = await prisma.apiKey.updateMany({
     where: {
       id: apiKeyId,
       workspaceId: context.workspace.id,
@@ -97,6 +129,15 @@ export async function revokeApiKeyAction(formData: FormData): Promise<void> {
       revokedByUserId: context.user.id
     }
   })
+
+  if (updated.count > 0) {
+    await recordMutationAuditEvent({
+      workspaceId: context.workspace.id,
+      actorUserId: context.user.id,
+      eventType: "api_key.revoked",
+      metadata: { apiKeyId }
+    })
+  }
 
   revalidatePath("/dashboard/developers")
 }
@@ -136,7 +177,7 @@ export async function createWebhookEndpointAction(
   }
 
   const secret = createWebhookSigningSecret()
-  await prisma.webhookEndpoint.create({
+  const webhookEndpoint = await prisma.webhookEndpoint.create({
     data: {
       workspaceId: context.workspace.id,
       url: normalizedUrl.url,
@@ -145,6 +186,20 @@ export async function createWebhookEndpointAction(
       signingSecretHash: secret.secretHash,
       signingSecretPrefix: secret.prefix,
       createdByUserId: context.user.id
+    },
+    select: { id: true }
+  })
+
+  await recordMutationAuditEvent({
+    workspaceId: context.workspace.id,
+    actorUserId: context.user.id,
+    eventType: "webhook.created",
+    metadata: {
+      webhookUrl: normalizedUrl.url,
+      webhookEndpointId: webhookEndpoint.id,
+      webhookDescription: description,
+      events: parsedEvents.events,
+      signingSecretPrefix: secret.prefix
     }
   })
 
@@ -167,7 +222,7 @@ export async function revokeWebhookEndpointAction(formData: FormData): Promise<v
     return
   }
 
-  await prisma.webhookEndpoint.updateMany({
+  const updated = await prisma.webhookEndpoint.updateMany({
     where: {
       id: webhookEndpointId,
       workspaceId: context.workspace.id,
@@ -178,6 +233,15 @@ export async function revokeWebhookEndpointAction(formData: FormData): Promise<v
       revokedByUserId: context.user.id
     }
   })
+
+  if (updated.count > 0) {
+    await recordMutationAuditEvent({
+      workspaceId: context.workspace.id,
+      actorUserId: context.user.id,
+      eventType: "webhook.revoked",
+      metadata: { webhookEndpointId }
+    })
+  }
 
   revalidatePath("/dashboard/developers")
 }

@@ -3,6 +3,13 @@ import {
   authenticatePublicApiRequest,
   getPublicAvatarConfig
 } from "@/lib/public-api"
+import {
+  RateLimitExceededError,
+  assertRateLimit,
+  getRequestIp,
+  rateLimitErrorPayload,
+  rateLimitPolicies
+} from "@/lib/rate-limit-policies"
 
 export const dynamic = "force-dynamic"
 
@@ -20,9 +27,19 @@ export async function GET(
 
   try {
     const context = await authenticatePublicApiRequest(request, "avatars:read")
+    await assertRateLimit(rateLimitPolicies.publicApiConfig, [
+      context.workspaceId,
+      context.apiKeyPrefix,
+      avatarId,
+      getRequestIp(request)
+    ])
     const avatar = await getPublicAvatarConfig(context, avatarId)
     return jsonResponse({ status: "ok", avatar }, 200)
   } catch (error) {
+    if (error instanceof RateLimitExceededError) {
+      return jsonResponse(rateLimitErrorPayload(error), 429)
+    }
+
     if (error instanceof PublicApiError) {
       return jsonResponse({
         status: "error",

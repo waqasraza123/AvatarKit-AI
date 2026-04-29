@@ -11,7 +11,6 @@ import {
 } from "@prisma/client"
 import {
   fetchAvatarByIdAndWorkspace,
-  getCurrentSourcePhoto,
   isAvatarPublicRuntimeEligible,
   isTextLengthSafe,
   type AvatarRecord
@@ -20,6 +19,7 @@ import { fetchRelevantKnowledgeChunksForPreview } from "@/lib/avatar-runtime-ret
 import { sendRuntimeTextMessage, type RuntimeLeadCapture, type RuntimeResponse } from "@/lib/avatar-runtime-client"
 import { recordRuntimeKnowledgeGap } from "@/lib/knowledge-gap"
 import { prisma } from "@/lib/prisma"
+import { assertRateLimit, rateLimitPolicies } from "@/lib/rate-limit-policies"
 import { recordRuntimeSafetyEvents } from "@/lib/safety"
 import {
   buildConversationMessageUsageEvent,
@@ -57,7 +57,6 @@ export type KioskPublicConfig = {
   qrHandoffUrl: string | null
   staffCallLabel: string | null
   staffCallUrl: string | null
-  photoUrl: string | null
 }
 
 export type KioskSessionResponse = {
@@ -92,9 +91,6 @@ export class KioskPublicError extends Error {
 const KIOSK_MESSAGE_MIN_LENGTH = 2
 const KIOSK_MESSAGE_MAX_LENGTH = 800
 const KIOSK_VISITOR_ID_MAX_LENGTH = 120
-const KIOSK_RATE_LIMIT_WINDOW_MS = 60_000
-const KIOSK_RATE_LIMIT_MAX_MESSAGES = 30
-const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>()
 
 function normalizeText(value: unknown): string {
   return String(value ?? "").trim()
@@ -162,32 +158,6 @@ function requestIp(request: Request): string {
   return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     request.headers.get("x-real-ip") ||
     "unknown"
-}
-
-function enforceRateLimit(params: { avatarId: string; visitorId: string; ip: string }): void {
-  const now = Date.now()
-  if (rateLimitBuckets.size > 1000) {
-    for (const [bucketKey, bucketValue] of rateLimitBuckets.entries()) {
-      if (bucketValue.resetAt <= now) {
-        rateLimitBuckets.delete(bucketKey)
-      }
-    }
-  }
-
-  const key = `${params.avatarId}:${params.visitorId}:${params.ip}`
-  const bucket = rateLimitBuckets.get(key)
-  if (!bucket || bucket.resetAt <= now) {
-    rateLimitBuckets.set(key, {
-      count: 1,
-      resetAt: now + KIOSK_RATE_LIMIT_WINDOW_MS
-    })
-    return
-  }
-
-  bucket.count += 1
-  if (bucket.count > KIOSK_RATE_LIMIT_MAX_MESSAGES) {
-    throw new KioskPublicError(429, "rate_limited", "Too many kiosk messages. Please wait a moment.")
-  }
 }
 
 function settingsRecord(settings: KioskSettings): KioskSettingsRecord {
@@ -351,7 +321,6 @@ async function loadKioskAvatar(avatarId: string): Promise<{ avatar: AvatarRecord
 
 export async function getPublicKioskConfig(avatarId: string): Promise<KioskPublicConfig> {
   const { avatar, settings } = await loadKioskAvatar(avatarId)
-  const photo = getCurrentSourcePhoto(avatar)
   return {
     avatarId: avatar.id,
     displayName: avatar.displayName,
@@ -365,8 +334,7 @@ export async function getPublicKioskConfig(avatarId: string): Promise<KioskPubli
     leadCaptureEnabled: settings.leadCaptureEnabled,
     qrHandoffUrl: settings.qrHandoffUrl,
     staffCallLabel: settings.staffCallLabel,
-    staffCallUrl: settings.staffCallUrl,
-    photoUrl: photo?.displayUrl ?? null
+    staffCallUrl: settings.staffCallUrl
   }
 }
 
@@ -374,7 +342,7 @@ export async function startKioskSession(avatarId: string, request: Request, body
   const { avatar } = await loadKioskAvatar(avatarId)
   const payload = body && typeof body === "object" ? body as Record<string, unknown> : {}
   const visitorId = parseVisitorId(payload.visitorId)
-  enforceRateLimit({ avatarId: avatar.id, visitorId, ip: requestIp(request) })
+  await assertRateLimit(rateLimitPolicies.kioskSessionStart, [avatar.id, visitorId, requestIp(request)])
 
   const conversation = await prisma.conversation.create({
     data: {
@@ -456,11 +424,11 @@ export async function processKioskMessage(avatarId: string, conversationId: stri
     throw new KioskPublicError(409, "session_expired", "Kiosk session expired for privacy.")
   }
 
-  enforceRateLimit({
-    avatarId: avatar.id,
-    visitorId: conversation.visitorId ?? "anonymous",
-    ip: requestIp(request)
-  })
+  await assertRateLimit(rateLimitPolicies.kioskMessage, [
+    avatar.id,
+    conversation.visitorId ?? "anonymous",
+    requestIp(request)
+  ])
 
   const visitorMessageId = randomUUID()
   await prisma.message.create({
@@ -546,7 +514,7 @@ export async function processKioskMessage(avatarId: string, conversationId: stri
       conversationId: conversation.id,
       messageId: visitorMessageId,
       status: "error",
-      answer: "The kiosk runtime failed. Please ask a staff member for help.",
+      answer: "I can’t produce a reliable answer right now. Please ask a staff member for help.",
       leadCaptureDecision: "none",
       leadCapture: {
         required: false,

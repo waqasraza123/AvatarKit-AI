@@ -236,6 +236,25 @@ export async function fetchOrCreateWorkspaceBranding(workspaceId: string): Promi
   return brandingRecord(created)
 }
 
+export async function fetchWorkspaceBrandingOrDefault(workspaceId: string): Promise<WorkspaceBrandingRecord> {
+  const existing = await prisma.workspaceBranding.findUnique({
+    where: { workspaceId }
+  })
+
+  if (existing) {
+    return brandingRecord(existing)
+  }
+
+  return {
+    id: "",
+    workspaceId,
+    brandName: null,
+    customLogoUrl: null,
+    widgetAccentColor: null,
+    hideAvatarKitBranding: false
+  }
+}
+
 export async function fetchOrCreateWorkspaceClientProfile(workspaceId: string): Promise<WorkspaceClientProfileRecord> {
   const existing = await prisma.workspaceClientProfile.findUnique({
     where: { workspaceId }

@@ -4,6 +4,10 @@ import {
   getPublicWidgetConfig,
   processWidgetMessage
 } from "@/lib/widget"
+import {
+  RateLimitExceededError,
+  rateLimitErrorPayload
+} from "@/lib/rate-limit-policies"
 
 export const dynamic = "force-dynamic"
 
@@ -59,6 +63,10 @@ export async function POST(
     const result = await processWidgetMessage(avatarId, request, body)
     return jsonResponse(result, 200, origin)
   } catch (error) {
+    if (error instanceof RateLimitExceededError) {
+      return jsonResponse(rateLimitErrorPayload(error), 429, origin)
+    }
+
     if (error instanceof WidgetPublicError) {
       return jsonResponse({
         status: "error",

@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation"
 import { revalidatePath } from "next/cache"
 import { LeadStatus } from "@prisma/client"
+import { recordMutationAuditEvent } from "@/lib/audit"
 import { canManageLead } from "@/lib/lead"
 import { prisma } from "@/lib/prisma"
 import { getWorkspaceContextForRequest } from "@/lib/workspace"
@@ -81,6 +82,17 @@ export async function updateLeadStatusAction(formData: FormData): Promise<void> 
   await prisma.lead.update({
     where: { id: lead.id },
     data: { status: targetStatus }
+  })
+
+  await recordMutationAuditEvent({
+    workspaceId: context.workspace.id,
+    actorUserId: context.user.id,
+    conversationId: lead.conversationId,
+    eventType: "lead.status_updated",
+    metadata: {
+      leadId: lead.id,
+      targetStatus
+    }
   })
 
   revalidatePath("/dashboard/leads")

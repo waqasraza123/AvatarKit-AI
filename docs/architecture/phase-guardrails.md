@@ -238,6 +238,31 @@
   - duplicated avatars must be created as drafts
   - duplicated avatars must not copy source photos, consent records, knowledge sources, generated media, conversations, leads, widget settings, kiosk settings, or publish state
 - Phase 24 must not add custom domains, checkout, automatic plan changes, global platform-admin roles, cross-workspace search outside memberships, CRM sync, notifications, contract generation, public arbitrary workspace mutation, production self-hosted inference, or new public API/SDK contracts.
+- Phase 25 adds production hardening only:
+  - no fake production-readiness claims
+  - no runtime verification by Codex during the implementation pass
+  - public endpoint hardening must preserve published-avatar, suspension, API-key, and domain checks
+  - public routes must not trust request-body `workspaceId`
+  - public widget, public API, and kiosk payloads must not expose private source-photo storage paths
+  - provider secrets, API key hashes, raw keys, webhook secrets, session tokens, hidden prompts, and private provider payloads must never appear in UI or public responses
+  - in-memory rate limiting must be documented honestly as non-distributed
+  - mutation trace coverage may use existing persisted observability tables but must not be described as immutable compliance audit logging
+  - manual verification is the human owner's responsibility
+  - future work should preserve `deployment-readiness`, `security`, `runtime-fallbacks`, and `manual-verification-checklist` docs
+- Phase 25 must not add new product modules, production self-hosted GPU rendering, CRM integrations, checkout, custom domains, global platform admin, broad redesigns, or future phase behavior.
+- Phase 26 adds durable production controls and operator foundation only:
+  - platform-admin access is explicit through `User.isPlatformAdmin` or `PLATFORM_ADMIN_EMAILS` bootstrap fallback
+  - workspace `OWNER` must not automatically become platform admin
+  - public API keys must not grant admin access
+  - `AuditLog` is the dedicated audit table and app logic treats it as append-only
+  - audit metadata must redact raw API keys, key hashes, provider secrets, session tokens, webhook secrets, hidden prompts, and large unsafe payloads
+  - audit-log UI must render safe summaries, not raw metadata blobs
+  - central rate limiting must use memory fallback and optional Redis REST only when explicitly configured
+  - public rate-limit responses must use safe user-facing messages and must not expose provider details
+  - storage readiness may document `LOCAL`, `S3_COMPATIBLE`, `R2`, and `SUPABASE` intent, but actual uploads remain local-only unless a real adapter exists
+  - operations readiness must show env variable names and static configuration state only; it must not claim live connectivity
+  - manual verification remains the human owner's responsibility
+- Phase 26 must not add Phase 27 behavior, new product modules, real cloud upload adapters, fake Redis verification, fake storage verification, provider health success claims, CRM integrations, billing checkout, custom domains, production self-hosted GPU rendering, WebRTC avatar calls, 3D rendering, broad redesigns, commits, or pushes.
 
 ## Phase 1 decisions (implemented)
 

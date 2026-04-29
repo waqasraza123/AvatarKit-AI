@@ -210,6 +210,10 @@ function defaultLeadCapture(): RuntimeLeadCapture {
   }
 }
 
+function safeRuntimeFallbackAnswer(): string {
+  return "I can’t produce a reliable answer right now. Please try again or request help from the team."
+}
+
 function parseRuntimeLeadCapture(value: unknown, decision: "none" | "request"): RuntimeLeadCapture {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return decision === "request"
@@ -300,22 +304,22 @@ export async function sendRuntimeTextMessage(
   const timeoutMs = resolveRuntimeTimeoutMs()
 
   if (!token) {
-      return {
-        status: "error",
-        conversationId: request.conversationId,
-        messageId: request.messageId,
-        answer: "Runtime service token is not configured for runtime requests.",
+    return {
+      status: "error",
+      conversationId: request.conversationId,
+      messageId: request.messageId,
+      answer: safeRuntimeFallbackAnswer(),
       leadCaptureDecision: "none",
       leadCapture: defaultLeadCapture(),
-        handoffDecision: "request",
-        usage: { provider: "MOCK", mockFallbackUsed: true },
-        sourceReferences: [],
-        safetyEvents: [],
-        fallbackUsed: true,
-        missingKnowledge: false,
-        handoffRequired: true,
-        originalQuestion: request.inputText || null
-      }
+      handoffDecision: "request",
+      usage: { provider: "unknown", mockFallbackUsed: true, reason: "runtime_service_token_missing" },
+      sourceReferences: [],
+      safetyEvents: [],
+      fallbackUsed: true,
+      missingKnowledge: false,
+      handoffRequired: true,
+      originalQuestion: request.inputText || null
+    }
   }
 
   const controller = new AbortController()
@@ -367,9 +371,7 @@ export async function sendRuntimeTextMessage(
         status: "error",
         conversationId: request.conversationId,
         messageId: request.messageId,
-        answer: typeof (payload as { detail?: unknown }).detail === "string"
-          ? String((payload as { detail: string }).detail)
-          : `Runtime request failed with status ${response.status}.`,
+        answer: safeRuntimeFallbackAnswer(),
         leadCaptureDecision: "none",
         leadCapture: defaultLeadCapture(),
         handoffDecision: "request",
@@ -421,7 +423,7 @@ export async function sendRuntimeTextMessage(
         status: "error",
         conversationId: request.conversationId,
         messageId: request.messageId,
-        answer: "Runtime request timed out.",
+        answer: safeRuntimeFallbackAnswer(),
         leadCaptureDecision: "none",
         leadCapture: defaultLeadCapture(),
         handoffDecision: "request",
@@ -438,7 +440,7 @@ export async function sendRuntimeTextMessage(
       status: "error",
       conversationId: request.conversationId,
       messageId: request.messageId,
-      answer: "Runtime request failed. Please try again shortly.",
+      answer: safeRuntimeFallbackAnswer(),
       leadCaptureDecision: "none",
       leadCapture: defaultLeadCapture(),
       handoffDecision: "request",

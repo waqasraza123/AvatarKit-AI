@@ -1,6 +1,13 @@
 import { revalidatePath } from "next/cache"
 import { submitKioskLead } from "@/lib/lead"
 import { KioskPublicError } from "@/lib/kiosk"
+import {
+  RateLimitExceededError,
+  assertRateLimit,
+  getRequestIp,
+  rateLimitErrorPayload,
+  rateLimitPolicies
+} from "@/lib/rate-limit-policies"
 
 export const dynamic = "force-dynamic"
 
@@ -28,6 +35,10 @@ export async function POST(
   }
 
   try {
+    await assertRateLimit(rateLimitPolicies.kioskLeadSubmit, [
+      avatarId,
+      getRequestIp(request)
+    ])
     const result = await submitKioskLead(avatarId, request, body)
     const payload = body && typeof body === "object" ? body as Record<string, unknown> : {}
     const conversationId = String(payload.conversationId ?? "").trim()
@@ -40,6 +51,10 @@ export async function POST(
       ...result
     }, 200)
   } catch (error) {
+    if (error instanceof RateLimitExceededError) {
+      return jsonResponse(rateLimitErrorPayload(error), 429)
+    }
+
     if (error instanceof KioskPublicError) {
       return jsonResponse({
         status: "error",

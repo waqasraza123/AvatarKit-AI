@@ -43,6 +43,11 @@ type KioskErrorResponse = {
   status?: string
   code?: string
   message?: string
+  error?: {
+    code?: string
+    message?: string
+    retryAfterSeconds?: number
+  }
 }
 
 type LeadCapturePrompt = {
@@ -71,7 +76,7 @@ async function parseJsonResponse<T>(response: Response): Promise<T> {
   const payload = await response.json().catch(() => null)
   if (!response.ok) {
     const errorPayload = payload as KioskErrorResponse | null
-    throw new Error(errorPayload?.message ?? "Kiosk request failed.")
+    throw new Error(errorPayload?.error?.message ?? errorPayload?.message ?? "Kiosk request failed.")
   }
 
   return payload as T
@@ -349,11 +354,7 @@ export function KioskExperience({ config }: { config: KioskPublicConfig }) {
       <section className="kiosk-stage" aria-live="polite">
         <div className="kiosk-avatar-panel">
           <div className="kiosk-avatar-visual">
-            {config.photoUrl ? (
-              <img src={config.photoUrl} alt={config.displayName} />
-            ) : (
-              <span>{config.initials}</span>
-            )}
+            <span>{config.initials}</span>
           </div>
           <div>
             <p className="eyebrow">{config.role}</p>

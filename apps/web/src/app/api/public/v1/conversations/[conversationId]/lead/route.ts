@@ -4,6 +4,13 @@ import {
   authenticatePublicApiRequest,
   submitPublicApiLead
 } from "@/lib/public-api"
+import {
+  RateLimitExceededError,
+  assertRateLimit,
+  getRequestIp,
+  rateLimitErrorPayload,
+  rateLimitPolicies
+} from "@/lib/rate-limit-policies"
 
 export const dynamic = "force-dynamic"
 
@@ -32,11 +39,21 @@ export async function POST(
 
   try {
     const context = await authenticatePublicApiRequest(request, "leads:write")
+    await assertRateLimit(rateLimitPolicies.publicApiLeadSubmit, [
+      context.workspaceId,
+      context.apiKeyPrefix,
+      conversationId,
+      getRequestIp(request)
+    ])
     const lead = await submitPublicApiLead(context, conversationId, body)
     revalidatePath("/dashboard/leads")
     revalidatePath(`/dashboard/conversations/${conversationId}`)
     return jsonResponse({ status: "ok", ...lead }, 200)
   } catch (error) {
+    if (error instanceof RateLimitExceededError) {
+      return jsonResponse(rateLimitErrorPayload(error), 429)
+    }
+
     if (error instanceof PublicApiError) {
       return jsonResponse({
         status: "error",

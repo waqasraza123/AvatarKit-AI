@@ -17,6 +17,7 @@ import {
   WorkspaceRole
 } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
+import { recordMutationAuditEvent } from "@/lib/audit"
 import { getWorkspaceContextForRequest, hasWorkspaceRole } from "@/lib/workspace"
 import {
   buildAvatarPhotoDisplayUrl,
@@ -973,6 +974,19 @@ export async function uploadAvatarPhotoAction(
       },
       idempotencyKey: `storage-upload:${assetId}`
     })
+    await recordMutationAuditEvent({
+      workspaceId: avatar.workspaceId,
+      actorUserId: context.user.id,
+      avatarId: avatar.id,
+      eventType: "avatar_photo.uploaded",
+      metadata: {
+        assetId,
+        mimeType: photoFile.type,
+        sizeBytes: photoFile.size,
+        width: validation.width ?? 0,
+        height: validation.height ?? 0
+      }
+    })
   } catch {
     await deleteAvatarAssetFromDisk(storageKey).catch(() => undefined)
     return photoValidationError("Could not process image metadata. Please try again.")
@@ -1040,6 +1054,16 @@ export async function removeAvatarPhotoAction(
       validationStatus: AvatarAssetValidationStatus.VALID
     },
     data: { validationStatus: AvatarAssetValidationStatus.INVALID }
+  })
+
+  await recordMutationAuditEvent({
+    workspaceId: context.workspace.id,
+    actorUserId: context.user.id,
+    avatarId: avatar.id,
+    eventType: "avatar_photo.removed",
+    metadata: {
+      assetId: currentPhoto.id
+    }
   })
 
   revalidatePath(`/dashboard/avatars/${avatar.id}/studio`)
@@ -1158,6 +1182,19 @@ export async function acceptAvatarConsentAction(
     }
   })
 
+  await recordMutationAuditEvent({
+    workspaceId: avatar.workspaceId,
+    actorUserId: context.user.id,
+    avatarId: avatar.id,
+    eventType: "avatar_consent.accepted",
+    metadata: {
+      sourcePhotoAssetId: currentPhoto.id,
+      consentType: data.consentType,
+      permissionBasis: data.permissionBasis,
+      termsVersion: AVATAR_CONSENT_TERMS_VERSION
+    }
+  })
+
   revalidatePath(`/dashboard/avatars/${avatar.id}/studio`)
   revalidatePath("/dashboard/avatars")
   return {
@@ -1213,6 +1250,13 @@ export async function updateAvatarVoiceAction(
       data: { voiceId: null }
     })
 
+    await recordMutationAuditEvent({
+      workspaceId: context.workspace.id,
+      actorUserId: context.user.id,
+      avatarId: avatar.id,
+      eventType: "avatar_voice.cleared"
+    })
+
     revalidatePath(`/dashboard/avatars/${avatar.id}/studio`)
     revalidatePath("/dashboard/avatars")
 
@@ -1252,6 +1296,18 @@ export async function updateAvatarVoiceAction(
   await prisma.avatar.update({
     where: { id: avatar.id },
     data: { voiceId: persistedVoice.id }
+  })
+
+  await recordMutationAuditEvent({
+    workspaceId: context.workspace.id,
+    actorUserId: context.user.id,
+    avatarId: avatar.id,
+    eventType: "avatar_voice.updated",
+    metadata: {
+      voiceId: persistedVoice.id,
+      provider: persistedVoice.provider,
+      language: persistedVoice.language
+    }
   })
 
   revalidatePath(`/dashboard/avatars/${avatar.id}/studio`)
@@ -1318,6 +1374,16 @@ export async function publishAvatarAction(
     }
   })
 
+  await recordMutationAuditEvent({
+    workspaceId: context.workspace.id,
+    actorUserId: context.user.id,
+    avatarId: avatar.id,
+    eventType: "avatar.published",
+    metadata: {
+      previouslyPublished: Boolean(avatar.publishedAt)
+    }
+  })
+
   revalidatePath(`/dashboard/avatars/${avatar.id}/studio?step=publish`)
   revalidatePath("/dashboard/avatars")
 
@@ -1368,6 +1434,16 @@ export async function unpublishAvatarAction(
     where: { id: avatar.id },
     data: {
       status: getAvatarStatusAfterUnpublish(avatar)
+    }
+  })
+
+  await recordMutationAuditEvent({
+    workspaceId: context.workspace.id,
+    actorUserId: context.user.id,
+    avatarId: avatar.id,
+    eventType: "avatar.unpublished",
+    metadata: {
+      restoredStatus: getAvatarStatusAfterUnpublish(avatar)
     }
   })
 

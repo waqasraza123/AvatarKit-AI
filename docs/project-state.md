@@ -73,11 +73,14 @@ auth, workspace isolation, dashboard shell, and future avatar/knowledge/runtime 
   - `WorkspaceBranding`
   - `WorkspaceClientProfile`
   - `AllowedDomain`
+  - `AuditLog`
+  - `AuditLogActorType` enum
+  - `AuditLogTargetType` enum
 - `apps/web` uses route-level server components and server actions for all auth/workspace flows.
 
 ## Current Phase
 
-Phase 24 is now implemented pending manual approval: Agency and White-Label Features.
+Phase 26 is now implemented pending manual approval: Durable Production Controls and Operator Foundation.
 
 ## Completed Major Slices
 
@@ -218,10 +221,30 @@ Phase 24 is now implemented pending manual approval: Agency and White-Label Feat
 - First-class `WorkspaceBranding` model now stores workspace-scoped white-label widget settings.
 - First-class `WorkspaceClientProfile` model now stores client handoff metadata and checklist state.
 - `/dashboard/agency` is a real agency workspace surface scoped to the current user's workspace memberships.
+- `User.isPlatformAdmin` now provides durable platform-admin identity; `PLATFORM_ADMIN_EMAILS` is explicit bootstrap/fallback only.
+- `apps/web/src/lib/platform-admin.ts` centralizes server-side platform-admin checks.
+- First-class `AuditLog` records sanitized high-value mutation events with actor/target metadata.
+- `apps/web/src/lib/audit.ts` writes `AuditLog` rows while preserving existing `RuntimeTrace` audit continuity.
+- Audit coverage includes API key, webhook, avatar publish/suspend, consent, branding, agency profile, kiosk, widget/domain, safety review, and lead status mutation paths.
+- `/admin/audit-log` provides platform-admin audit review.
+- `/dashboard/operations/audit-log` provides workspace owner/admin audit review.
+- Central rate limiting now lives in `apps/web/src/lib/rate-limit.ts` and `apps/web/src/lib/rate-limit-policies.ts`.
+- Public API, widget, kiosk, auth attempt, and API key creation paths use central rate-limit policies with memory fallback and optional Redis REST config.
+- Storage readiness helpers distinguish `LOCAL`, `S3_COMPATIBLE`, `R2`, and `SUPABASE` labels while actual storage remains local-only.
+- Operations readiness now includes core app, database, Redis/rate limits, storage, AI runtime, LLM, TTS/STT, avatar video, public URLs, billing, platform admin, and webhooks.
+- Phase 26 documentation lives in `docs/architecture/audit-logging.md` and `docs/architecture/rate-limiting.md`.
 - Agency dashboard shows client workspace overview, active workspace branding, active client handoff profile, safe avatar duplication, and setup instruction export text.
 - Avatar template duplication requires source membership and target workspace operator-or-higher access.
 - Duplicated avatars are always drafts and do not copy source photos, consent, generated media, knowledge, conversations, leads, widget settings, kiosk settings, or publish state.
 - Public widget config now exposes safe white-label brand fields and defensively plan-gates hiding AvatarKit branding to Agency or Enterprise plans.
+- Phase 25 production hardening added `.DS_Store` repo hygiene, expanded `.env.example`, deployment readiness documentation, security documentation, runtime fallback documentation, and a manual verification master checklist.
+- Public API v1 now has an in-memory rate-limit boundary and stricter public ID/summary validation.
+- Public widget runtime now blocks provider-hosted video URLs from public widget output unless media is copied into controlled storage.
+- Public kiosk config no longer exposes private dashboard source-photo preview URLs.
+- Storage key validation now accepts normal file extensions while rejecting path traversal and paths outside the storage root.
+- Runtime fallback messages are safer and avoid returning runtime/provider implementation details to visitors.
+- Critical mutations now record sanitized `audit.*` mutation traces through existing `RuntimeTrace` persistence.
+- `/dashboard/operations` now includes configuration readiness indicators by variable name only.
 
 ## Important Decisions
 
@@ -308,17 +331,21 @@ Phase 24 is now implemented pending manual approval: Agency and White-Label Feat
 - White-label data is workspace-scoped and public widget config exposes only safe brand name, logo URL, accent color, and branding visibility fields.
 - Avatar duplication is a template workflow, not a data export; client media, consent, knowledge, conversations, leads, public settings, and publish state remain isolated.
 - Hiding AvatarKit branding is allowed only for Agency and Enterprise billing plans and remains defensively gated at public config time.
+- Phase 25 is a hardening pass only: no future product modules, no self-hosted GPU production inference, no checkout, no custom domains, no global platform admin, and no broad redesign.
+- Phase 25 did not add a first-class immutable audit log table; it records sanitized mutation traces in `RuntimeTrace`.
+- Phase 25 public rate limiting is in-memory and must be replaced with distributed Redis-backed rate limiting before multi-instance production use.
+- Manual verification is pending owner approval; no verification commands were run by Codex for Phase 25.
 
 ## Non-Negotiable Rules (still active)
 
 - Preserve existing architecture conventions and phase boundaries.
 - Do not add production logic for future phases ahead of their designated order.
 - Strong validation at request/action boundaries.
-- No future feature flows beyond Phase 24 agency and white-label features: no Stripe, checkout, subscriptions, invoices, payment methods, billing portal, hard usage blocking, automatic plan mutation, global platform-admin identity, cross-workspace search outside current memberships, custom domains, production GPU queue persistence, external observability vendor integration, alert delivery, automatic provider retries, customer-facing self-hosted controls, inline widget voice input upload, continuous listening, WebRTC avatar calls, realtime lip-sync transport, barge-in/interruption handling, operator handoff workflow, live staff chat, kiosk hardware management, offline runtime, CRM sync, notifications, webhook delivery workers, browser-rendered 3D avatar mode, voice cloning, custom voice upload, public identity verification, KYC, biometric face recognition, external celebrity detection, or production self-hosted inference.
+- No future feature flows beyond Phase 25 production hardening: no Stripe checkout, subscriptions, invoices, payment methods, billing portal, hard usage blocking, automatic plan mutation, global platform-admin identity, cross-workspace search outside current memberships, custom domains, production GPU queue persistence, external observability vendor integration, alert delivery, automatic provider retries, customer-facing self-hosted controls, inline widget voice input upload, continuous listening, WebRTC avatar calls, realtime lip-sync transport, barge-in/interruption handling, operator handoff workflow, live staff chat, kiosk hardware management, offline runtime, CRM sync, notifications, webhook delivery workers, browser-rendered 3D avatar mode, voice cloning, custom voice upload, public identity verification, KYC, biometric face recognition, external celebrity detection, or production self-hosted inference.
 
 ## Current Next Step
 
-Phase 24 implementation is pending manual approval in `docs/development.md` and `docs/development/phase-24-agency-white-label.md`.
+Phase 25 implementation is pending manual approval in `docs/development.md` and `docs/architecture/manual-verification-checklist.md`.
 
 ## Verification Commands (manual, user-run)
 
@@ -334,7 +361,8 @@ Phase 24 implementation is pending manual approval in `docs/development.md` and 
 - `pnpm dev:api`
 - `pnpm dev:ai-runtime`
 - Execute the manual verification paths listed in `docs/development.md`.
-- Additional suggested manual commands after Phases 17-18:
+- Execute the Phase 25 master checklist in `docs/architecture/manual-verification-checklist.md`.
+- Additional suggested manual commands after Phase 25:
   - `pnpm typecheck`
   - `pnpm lint`
   - `pnpm test`
@@ -342,3 +370,4 @@ Phase 24 implementation is pending manual approval in `docs/development.md` and 
   - `pnpm build`
   - `python -m pytest`
   - `python -m compileall services`
+  - `git status --short`

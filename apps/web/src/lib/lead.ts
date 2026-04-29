@@ -1,6 +1,7 @@
 import {
   AvatarStatus,
   ConversationChannel,
+  ConversationStatus,
   LeadSource,
   LeadStatus,
   SafetyAction,
@@ -465,7 +466,8 @@ export async function submitWidgetLead(avatarId: string, request: Request, body:
       id: parsed.values.conversationId,
       workspaceId: avatar.workspaceId,
       avatarId: avatar.id,
-      channel: ConversationChannel.WIDGET
+      channel: ConversationChannel.WIDGET,
+      status: ConversationStatus.ACTIVE
     },
     select: {
       id: true,
@@ -590,7 +592,8 @@ export async function submitKioskLead(avatarId: string, request: Request, body: 
       id: parsed.values.conversationId,
       workspaceId: avatar.workspaceId,
       avatarId: avatar.id,
-      channel: ConversationChannel.KIOSK
+      channel: ConversationChannel.KIOSK,
+      status: ConversationStatus.ACTIVE
     },
     select: {
       id: true,

@@ -3,6 +3,13 @@ import {
   buildWidgetCorsHeaders,
   getPublicWidgetConfig
 } from "@/lib/widget"
+import {
+  RateLimitExceededError,
+  assertRateLimit,
+  getRequestIp,
+  rateLimitErrorPayload,
+  rateLimitPolicies
+} from "@/lib/rate-limit-policies"
 
 export const dynamic = "force-dynamic"
 
@@ -43,9 +50,18 @@ export async function GET(
   const { avatarId } = await params
   const origin = request.headers.get("origin")
   try {
+    await assertRateLimit(rateLimitPolicies.widgetConfig, [
+      avatarId,
+      origin,
+      getRequestIp(request)
+    ])
     const config = await getPublicWidgetConfig(avatarId, request)
     return jsonResponse(config, 200, origin)
   } catch (error) {
+    if (error instanceof RateLimitExceededError) {
+      return jsonResponse(rateLimitErrorPayload(error), 429, origin)
+    }
+
     if (error instanceof WidgetPublicError) {
       return jsonResponse({
         status: "error",

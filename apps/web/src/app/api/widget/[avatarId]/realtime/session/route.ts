@@ -6,6 +6,13 @@ import {
   buildWidgetCorsHeaders
 } from "@/lib/widget"
 import { prisma } from "@/lib/prisma"
+import {
+  RateLimitExceededError,
+  assertRateLimit,
+  getRequestIp,
+  rateLimitErrorPayload,
+  rateLimitPolicies
+} from "@/lib/rate-limit-policies"
 import { startRealtimeSession } from "@/lib/realtime"
 
 export const dynamic = "force-dynamic"
@@ -67,6 +74,13 @@ export async function POST(
 
     const payload = body && typeof body === "object" ? body as Record<string, unknown> : {}
     const visitorId = parseVisitorId(payload.visitorId)
+    await assertRateLimit(rateLimitPolicies.widgetRealtimeSessionStart, [
+      avatar.workspaceId,
+      avatar.id,
+      visitorId,
+      domainAccess.domain,
+      getRequestIp(request)
+    ])
     const session = await startRealtimeSession({
       workspaceId: avatar.workspaceId,
       avatarId: avatar.id,
@@ -85,6 +99,10 @@ export async function POST(
       visitorId
     }, 200, origin)
   } catch (error) {
+    if (error instanceof RateLimitExceededError) {
+      return jsonResponse(rateLimitErrorPayload(error), 429, origin)
+    }
+
     if (error instanceof WidgetPublicError) {
       return jsonResponse({
         status: "error",

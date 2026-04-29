@@ -89,6 +89,8 @@ const WEBHOOK_SECRET_PREFIX_LENGTH = 10
 const PUBLIC_API_MESSAGE_MIN_LENGTH = 2
 const PUBLIC_API_MESSAGE_MAX_LENGTH = 800
 const PUBLIC_API_VISITOR_ID_MAX_LENGTH = 120
+const PUBLIC_API_SUMMARY_MAX_LENGTH = 220
+const PUBLIC_API_ID_MAX_LENGTH = 160
 
 function hashSecret(value: string): string {
   return createHash("sha256").update(value).digest("hex")
@@ -106,6 +108,16 @@ function safeCompareHex(left: string, right: string): boolean {
 
 function normalizeText(value: unknown): string {
   return String(value ?? "").trim()
+}
+
+function isPublicResourceId(value: string): boolean {
+  return value.length > 0 && value.length <= PUBLIC_API_ID_MAX_LENGTH && /^[a-zA-Z0-9_-]+$/.test(value)
+}
+
+function assertPublicResourceId(value: string, code: string, message: string): void {
+  if (!isPublicResourceId(value)) {
+    throw new PublicApiError(400, code, message)
+  }
 }
 
 function parsePublicApiKey(value: string): { rawKey: string; prefix: string } | null {
@@ -141,6 +153,10 @@ function parseVisitorId(value: unknown): string {
 
 function parseOutputMode(_value: unknown): PublicApiOutputMode {
   return "text"
+}
+
+function safeRuntimeFallbackAnswer(): string {
+  return "I can’t produce a reliable answer right now. Please try again or request help from the team."
 }
 
 function apiKeySelect() {
@@ -274,12 +290,13 @@ export async function authenticatePublicApiRequest(request: Request, requiredSco
     data: { lastUsedAt: new Date() }
   }).catch(() => undefined)
 
-  return {
+  const context = {
     workspaceId: key.workspaceId,
     apiKeyId: key.id,
     apiKeyPrefix: parsed.prefix,
     scopes: key.scopes
   }
+  return context
 }
 
 export async function listApiKeysForWorkspace(workspaceId: string) {
@@ -299,6 +316,8 @@ export async function listWebhookEndpointsForWorkspace(workspaceId: string) {
 }
 
 export async function getPublicAvatarConfig(context: PublicApiContext, avatarId: string) {
+  assertPublicResourceId(avatarId, "invalid_avatar_id", "Avatar id is invalid.")
+
   const avatar = await fetchAvatarByIdAndWorkspace(context.workspaceId, avatarId)
   if (!avatar || !isAvatarPublicRuntimeEligible(avatar) || avatar.status !== AvatarStatus.PUBLISHED) {
     throw new PublicApiError(404, "avatar_unavailable", "Avatar is not available for public API use.")
@@ -325,10 +344,16 @@ export async function startPublicApiConversation(context: PublicApiContext, body
   if (!avatarId) {
     throw new PublicApiError(400, "avatar_required", "avatarId is required.")
   }
+  assertPublicResourceId(avatarId, "invalid_avatar_id", "Avatar id is invalid.")
 
   const avatar = await fetchAvatarByIdAndWorkspace(context.workspaceId, avatarId)
   if (!avatar || !isAvatarPublicRuntimeEligible(avatar) || avatar.status !== AvatarStatus.PUBLISHED) {
     throw new PublicApiError(404, "avatar_unavailable", "Avatar is not available for public API use.")
+  }
+
+  const summary = normalizeText(payload.summary)
+  if (summary && !isTextLengthSafe(summary, PUBLIC_API_SUMMARY_MAX_LENGTH)) {
+    throw new PublicApiError(400, "summary_too_long", `Summary must be ${PUBLIC_API_SUMMARY_MAX_LENGTH} characters or fewer.`)
   }
 
   const visitorId = parseVisitorId(payload.visitorId)
@@ -339,7 +364,7 @@ export async function startPublicApiConversation(context: PublicApiContext, body
       visitorId,
       channel: ConversationChannel.API,
       status: ConversationStatus.ACTIVE,
-      summary: normalizeText(payload.summary) || null
+      summary: summary || null
     },
     select: {
       id: true,
@@ -384,6 +409,8 @@ export async function startPublicApiConversation(context: PublicApiContext, body
 }
 
 export async function getPublicApiConversationStatus(context: PublicApiContext, conversationId: string) {
+  assertPublicResourceId(conversationId, "invalid_conversation_id", "Conversation id is invalid.")
+
   const conversation = await prisma.conversation.findFirst({
     where: {
       id: conversationId,
@@ -443,6 +470,8 @@ async function createPublicApiRuntimeTrace(params: {
 }
 
 export async function sendPublicApiConversationMessage(context: PublicApiContext, conversationId: string, body: unknown) {
+  assertPublicResourceId(conversationId, "invalid_conversation_id", "Conversation id is invalid.")
+
   const payload = parseJsonObject(body)
   const inputText = normalizeText(payload.message)
   if (inputText.length < PUBLIC_API_MESSAGE_MIN_LENGTH) {
@@ -559,7 +588,7 @@ export async function sendPublicApiConversationMessage(context: PublicApiContext
       conversationId: conversation.id,
       messageId: visitorMessageId,
       status: "error",
-      answer: "Runtime request failed. Please try again.",
+      answer: safeRuntimeFallbackAnswer(),
       leadCaptureDecision: "none",
       leadCapture: {
         required: false,
@@ -686,6 +715,8 @@ export async function sendPublicApiConversationMessage(context: PublicApiContext
 }
 
 export async function submitPublicApiLead(context: PublicApiContext, conversationId: string, body: unknown) {
+  assertPublicResourceId(conversationId, "invalid_conversation_id", "Conversation id is invalid.")
+
   const parsed = validateLeadPayload({
     ...parseJsonObject(body),
     conversationId
@@ -699,7 +730,8 @@ export async function submitPublicApiLead(context: PublicApiContext, conversatio
     where: {
       id: parsed.values.conversationId,
       workspaceId: context.workspaceId,
-      channel: ConversationChannel.API
+      channel: ConversationChannel.API,
+      status: ConversationStatus.ACTIVE
     },
     select: {
       id: true,

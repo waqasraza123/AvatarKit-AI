@@ -1,5 +1,82 @@
 # Development
 
+## Phase 26 - Durable Production Controls and Operator Foundation
+
+Detailed Phase 26 notes live in:
+
+- `docs/architecture/audit-logging.md`
+- `docs/architecture/rate-limiting.md`
+- `docs/architecture/deployment-readiness.md`
+- `docs/architecture/security.md`
+- `docs/architecture/manual-verification-checklist.md`
+
+Phase 26 adds:
+
+- durable `User.isPlatformAdmin` support with server-side platform-admin guards
+- first-class `AuditLog` model and sanitized audit helper
+- audit coverage for API keys, webhooks, avatar publish/suspend, consent, branding, agency profile, kiosk settings, domains, safety review, and lead status updates
+- platform and workspace audit-log UI surfaces
+- central rate-limit provider abstraction with memory fallback and optional Redis REST support
+- rate-limit policies for public API, widget, kiosk, auth, and API-key creation surfaces
+- storage readiness helpers while keeping actual storage local-only
+- expanded operations readiness indicators by safe env variable names only
+- `.env.example` updates for platform admin, audit, rate limits, Redis REST, and storage readiness
+- manual verification documentation for owner approval
+
+Phase 26 intentionally does not add Phase 27 behavior, production billing checkout, CRM integrations, custom domains, real cloud storage uploads, Redis verification, provider health probes, self-hosted GPU rendering, or broad app rewrites.
+
+Suggested manual owner commands after reviewing Phase 26:
+
+```text
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm prisma generate
+pnpm build
+python -m pytest
+python -m compileall services
+git status --short
+```
+
+Manual verification paths are listed in `docs/architecture/manual-verification-checklist.md`.
+
+## Phase 25 - Production Hardening
+
+Detailed production hardening notes live in:
+
+- `docs/architecture/deployment-readiness.md`
+- `docs/architecture/security.md`
+- `docs/architecture/runtime-fallbacks.md`
+- `docs/architecture/manual-verification-checklist.md`
+
+Phase 25 adds:
+
+- repo hygiene for `.DS_Store`
+- storage key privacy hardening
+- public API in-memory rate limiting
+- widget/kiosk/public API fallback hardening
+- kiosk public config privacy hardening
+- provider-hosted widget video blocking unless copied to controlled storage
+- sanitized mutation trace coverage through existing `RuntimeTrace` rows
+- operations readiness indicators by variable name only
+- expanded `.env.example`
+- production readiness, security, runtime fallback, and manual verification docs
+
+Manual verification was intentionally not run. The owner should follow `docs/architecture/manual-verification-checklist.md` and run the suggested commands after review.
+
+Suggested manual owner commands after reviewing Phase 25:
+
+```text
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm prisma generate
+pnpm build
+python -m pytest
+python -m compileall services
+git status --short
+```
+
 ## Phase 24 - Agency and White-Label Features
 
 Detailed Phase 24 agency notes live in `docs/development/phase-24-agency-white-label.md`.

@@ -12,6 +12,7 @@ model User {
   email                  String            @unique
   passwordHash           String
   displayName            String?
+  isPlatformAdmin        Boolean           @default(false)
   createdAt              DateTime          @default(now())
   updatedAt              DateTime          @updatedAt
   sessions               Session[]
@@ -23,6 +24,7 @@ model User {
   revokedApiKeys         ApiKey[]           @relation("ApiKeyRevokedBy")
   createdWebhookEndpoints WebhookEndpoint[] @relation("WebhookEndpointCreatedBy")
   revokedWebhookEndpoints WebhookEndpoint[] @relation("WebhookEndpointRevokedBy")
+  auditLogs              AuditLog[]
 }
 
 model Workspace {
@@ -49,6 +51,34 @@ model Workspace {
   apiKeys          ApiKey[]
   webhookEndpoints WebhookEndpoint[]
   billingAccount   BillingAccount?
+  auditLogs         AuditLog[]
+}
+
+model AuditLog {
+  id            String             @id @default(cuid())
+  workspaceId   String?
+  actorUserId   String?
+  actorType     AuditLogActorType
+  action        String
+  targetType    AuditLogTargetType
+  targetId      String?
+  metadata      Json?
+  ip            String?
+  userAgent     String?
+  createdAt     DateTime           @default(now())
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  actorUser User?      @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@index([actorUserId])
+  @@index([actorType])
+  @@index([action])
+  @@index([targetType])
+  @@index([targetId])
+  @@index([createdAt])
+  @@index([workspaceId, createdAt])
+  @@index([workspaceId, action, createdAt])
 }
 
 model Avatar {
@@ -629,6 +659,31 @@ enum WorkspaceRole {
   ADMIN
   OPERATOR
   VIEWER
+}
+
+enum AuditLogActorType {
+  USER
+  PLATFORM_ADMIN
+  SYSTEM
+  API_KEY
+}
+
+enum AuditLogTargetType {
+  WORKSPACE
+  AVATAR
+  CONVERSATION
+  MESSAGE
+  LEAD
+  SAFETY_EVENT
+  USAGE_EVENT
+  API_KEY
+  BILLING_SUBSCRIPTION
+  WEBHOOK
+  BRANDING
+  KIOSK_SETTINGS
+  DOMAIN_ALLOWLIST
+  ADMIN
+  SYSTEM
 }
 
 enum AvatarStatus {

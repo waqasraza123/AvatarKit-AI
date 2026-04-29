@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { WorkspaceRole } from "@prisma/client"
+import { recordMutationAuditEvent } from "@/lib/audit"
 import { prisma } from "@/lib/prisma"
 import { getWorkspaceContextForRequest, hasWorkspaceRole } from "@/lib/workspace"
 import {
@@ -68,9 +69,20 @@ export async function addAllowedDomainAction(
     })
   }
 
-  await prisma.allowedDomain.create({
+  const allowedDomain = await prisma.allowedDomain.create({
     data: {
       workspaceId: context.workspace.id,
+      domain: normalized.domain
+    },
+    select: { id: true }
+  })
+
+  await recordMutationAuditEvent({
+    workspaceId: context.workspace.id,
+    actorUserId: context.user.id,
+    eventType: "widget_domain.added",
+    metadata: {
+      domainId: allowedDomain.id,
       domain: normalized.domain
     }
   })
@@ -100,12 +112,21 @@ export async function removeAllowedDomainAction(
     return actionError("Missing domain reference.")
   }
 
-  await prisma.allowedDomain.deleteMany({
+  const deleted = await prisma.allowedDomain.deleteMany({
     where: {
       id: domainId,
       workspaceId: context.workspace.id
     }
   })
+
+  if (deleted.count > 0) {
+    await recordMutationAuditEvent({
+      workspaceId: context.workspace.id,
+      actorUserId: context.user.id,
+      eventType: "widget_domain.removed",
+      metadata: { domainId }
+    })
+  }
 
   revalidatePath("/dashboard/embed")
   return {
@@ -158,6 +179,19 @@ export async function updateWidgetSettingsAction(
       ...widgetDbSettingsInput(parsed)
     },
     update: widgetDbSettingsInput(parsed)
+  })
+
+  await recordMutationAuditEvent({
+    workspaceId: context.workspace.id,
+    actorUserId: context.user.id,
+    avatarId: avatar.id,
+    eventType: "widget_settings.updated",
+    metadata: {
+      theme: parsed.theme,
+      position: parsed.position,
+      greetingEnabled: parsed.greetingEnabled,
+      primaryColor: parsed.primaryColor
+    }
   })
 
   revalidatePath("/dashboard/embed")

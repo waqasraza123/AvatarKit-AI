@@ -1,10 +1,15 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 
-const storageRoot = path.join(process.cwd(), ".data", "uploads", "avatar-assets")
+const configuredStorageRoot = process.env.LOCAL_STORAGE_ROOT || process.env.AVATAR_ASSET_STORAGE_ROOT
+const storageRoot = configuredStorageRoot
+  ? path.resolve(configuredStorageRoot)
+  : path.join(process.cwd(), ".data", "uploads", "avatar-assets")
 
 function assertSafeStorageKey(storageKey: string): void {
-  if (storageKey.includes("..")) {
+  const segments = storageKey.split("/")
+
+  if (segments.some(segment => !segment || segment === "." || segment === "..")) {
     throw new Error("Invalid storage key.")
   }
 
@@ -12,8 +17,15 @@ function assertSafeStorageKey(storageKey: string): void {
     throw new Error("Invalid storage key.")
   }
 
-  if (!/^[a-zA-Z0-9/_-]+$/.test(storageKey)) {
+  if (!/^[a-zA-Z0-9/._-]+$/.test(storageKey)) {
     throw new Error("Invalid storage key.")
+  }
+}
+
+function assertInsideStorageRoot(filePath: string): void {
+  const relativePath = path.relative(storageRoot, filePath)
+  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+    throw new Error("Invalid storage path.")
   }
 }
 
@@ -81,7 +93,9 @@ export function buildAvatarVoiceInputDisplayUrl(assetId: string): string {
 
 export function resolveAvatarAssetPath(storageKey: string): string {
   assertSafeStorageKey(storageKey)
-  return path.join(storageRoot, storageKey)
+  const filePath = path.join(storageRoot, storageKey)
+  assertInsideStorageRoot(filePath)
+  return filePath
 }
 
 export async function writeAvatarAssetToDisk(params: {

@@ -101,11 +101,14 @@ const AvatarKitContext = createContext<AvatarKitContextValue | null>(null)
 
 async function parseResponse<T>(response: Response): Promise<T> {
   const payload = await response.json().catch(() => ({})) as Record<string, unknown>
+  const nestedError = payload.error && typeof payload.error === "object" && !Array.isArray(payload.error)
+    ? payload.error as Record<string, unknown>
+    : null
   if (!response.ok) {
     throw new AvatarKitError(
       response.status,
-      typeof payload.code === "string" ? payload.code : "request_failed",
-      typeof payload.message === "string" ? payload.message : "AvatarKit request failed."
+      typeof nestedError?.code === "string" ? nestedError.code : typeof payload.code === "string" ? payload.code : "request_failed",
+      typeof nestedError?.message === "string" ? nestedError.message : typeof payload.message === "string" ? payload.message : "AvatarKit request failed."
     )
   }
 

@@ -5,6 +5,13 @@ import {
   buildWidgetCorsHeaders,
   getPublicWidgetConfig
 } from "@/lib/widget"
+import {
+  RateLimitExceededError,
+  assertRateLimit,
+  getRequestIp,
+  rateLimitErrorPayload,
+  rateLimitPolicies
+} from "@/lib/rate-limit-policies"
 
 export const dynamic = "force-dynamic"
 
@@ -57,6 +64,11 @@ export async function POST(
   }
 
   try {
+    await assertRateLimit(rateLimitPolicies.widgetLeadSubmit, [
+      avatarId,
+      origin,
+      getRequestIp(request)
+    ])
     const result = await submitWidgetLead(avatarId, request, body)
     const payload = body && typeof body === "object" ? body as Record<string, unknown> : {}
     const conversationId = String(payload.conversationId ?? "").trim()
@@ -69,6 +81,10 @@ export async function POST(
       ...result
     }, 200, origin)
   } catch (error) {
+    if (error instanceof RateLimitExceededError) {
+      return jsonResponse(rateLimitErrorPayload(error), 429, origin)
+    }
+
     if (error instanceof WidgetPublicError) {
       return jsonResponse({
         status: "error",

@@ -10,6 +10,7 @@ import {
   parseAgencyClientProfileInput,
   parseAgencyDuplicateInput
 } from "@/lib/agency"
+import { recordMutationAuditEvent } from "@/lib/audit"
 import { prisma } from "@/lib/prisma"
 import { getWorkspaceContextForRequest, hasWorkspaceRole, type DashboardContext } from "@/lib/workspace"
 
@@ -71,6 +72,20 @@ export async function updateAgencyBrandingAction(
     }
   })
 
+  await recordMutationAuditEvent({
+    workspaceId: context.workspace.id,
+    actorUserId: context.user.id,
+    eventType: "workspace_branding.updated",
+    metadata: {
+      workspaceId: context.workspace.id,
+      hasBrandName: Boolean(parsed.brandName),
+      hasCustomLogoUrl: Boolean(parsed.customLogoUrl),
+      hasAccentColor: Boolean(parsed.widgetAccentColor),
+      hideAvatarKitBranding: parsed.hideAvatarKitBranding,
+      plan
+    }
+  })
+
   revalidatePath("/dashboard/agency")
   revalidatePath("/dashboard/embed")
   return {
@@ -112,6 +127,20 @@ export async function updateAgencyClientProfileAction(
       clientContactName: parsed.clientContactName,
       clientContactEmail: parsed.clientContactEmail,
       handoffNotes: parsed.handoffNotes,
+      checklist: parsed.checklist
+    }
+  })
+
+  await recordMutationAuditEvent({
+    workspaceId: context.workspace.id,
+    actorUserId: context.user.id,
+    eventType: "workspace_client_profile.updated",
+    metadata: {
+      workspaceId: context.workspace.id,
+      hasClientName: Boolean(parsed.clientName),
+      hasClientContactName: Boolean(parsed.clientContactName),
+      hasClientContactEmail: Boolean(parsed.clientContactEmail),
+      hasHandoffNotes: Boolean(parsed.handoffNotes),
       checklist: parsed.checklist
     }
   })
@@ -200,6 +229,20 @@ export async function duplicateAvatarForAgencyAction(
       engine: sourceAvatar.engine
     },
     select: { id: true }
+  })
+
+  await recordMutationAuditEvent({
+    workspaceId: parsed.targetWorkspaceId,
+    actorUserId: context.user.id,
+    avatarId: duplicated.id,
+    eventType: "avatar.duplicated",
+    metadata: {
+      sourceWorkspaceId: parsed.sourceWorkspaceId,
+      sourceAvatarId: parsed.sourceAvatarId,
+      targetWorkspaceId: parsed.targetWorkspaceId,
+      copyBehavior: parsed.copyBehavior,
+      copyVoice: parsed.copyVoice
+    }
   })
 
   revalidatePath("/dashboard/agency")
