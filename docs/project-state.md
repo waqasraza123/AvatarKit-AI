@@ -80,7 +80,7 @@ auth, workspace isolation, dashboard shell, and future avatar/knowledge/runtime 
 
 ## Current Phase
 
-Phase 26 is now implemented pending manual approval: Durable Production Controls and Operator Foundation.
+Phase 27 is now implemented pending manual approval: Data Governance Foundation.
 
 ## Completed Major Slices
 
@@ -233,6 +233,16 @@ Phase 26 is now implemented pending manual approval: Durable Production Controls
 - Storage readiness helpers distinguish `LOCAL`, `S3_COMPATIBLE`, `R2`, and `SUPABASE` labels while actual storage remains local-only.
 - Operations readiness now includes core app, database, Redis/rate limits, storage, AI runtime, LLM, TTS/STT, avatar video, public URLs, billing, platform admin, and webhooks.
 - Phase 26 documentation lives in `docs/architecture/audit-logging.md` and `docs/architecture/rate-limiting.md`.
+- First-class `WorkspaceDataExport` model now records workspace-scoped export requests, scope, manifest, status, completion, expiration, and requester.
+- First-class `WorkspaceDeletionRequest` model now records owner-requested deletion intent, reason, scheduled deletion, cancellation, completion, and requester/canceler.
+- `/dashboard/settings/data` is a real data governance surface for retained data inventory, workspace export history, deletion request history, and role-gated actions.
+- Authenticated export downloads exist under `/api/dashboard/data-exports/[exportId]/download`.
+- Workspace exports include workspace-owned product records while excluding password hashes, sessions, raw API keys, API key hashes, webhook secret hashes, provider secrets, environment values, and private runtime configuration.
+- Workspace export creation/download is restricted to `OWNER` and `ADMIN`.
+- Workspace deletion requests and cancellation are restricted to `OWNER` and require workspace-slug confirmation when requested.
+- Deletion requests are audit/scheduling records only; no automatic destructive deletion runs in Phase 27.
+- Audit coverage now includes `data_export.created`, `workspace_deletion.requested`, and `workspace_deletion.canceled`.
+- Phase 27 documentation lives in `docs/architecture/data-governance.md`.
 - Agency dashboard shows client workspace overview, active workspace branding, active client handoff profile, safe avatar duplication, and setup instruction export text.
 - Avatar template duplication requires source membership and target workspace operator-or-higher access.
 - Duplicated avatars are always drafts and do not copy source photos, consent, generated media, knowledge, conversations, leads, widget settings, kiosk settings, or publish state.
@@ -335,17 +345,19 @@ Phase 26 is now implemented pending manual approval: Durable Production Controls
 - Phase 25 did not add a first-class immutable audit log table; it records sanitized mutation traces in `RuntimeTrace`.
 - Phase 25 public rate limiting is in-memory and must be replaced with distributed Redis-backed rate limiting before multi-instance production use.
 - Manual verification is pending owner approval; no verification commands were run by Codex for Phase 25.
+- Phase 27 data export is synchronous and database-backed; object-storage export files and background export jobs remain future work.
+- Phase 27 deletion requests are not erasure automation; destructive execution requires future approved worker/manual operator procedure after backup, legal hold, and billing/account review.
 
 ## Non-Negotiable Rules (still active)
 
 - Preserve existing architecture conventions and phase boundaries.
 - Do not add production logic for future phases ahead of their designated order.
 - Strong validation at request/action boundaries.
-- No future feature flows beyond Phase 25 production hardening: no Stripe checkout, subscriptions, invoices, payment methods, billing portal, hard usage blocking, automatic plan mutation, global platform-admin identity, cross-workspace search outside current memberships, custom domains, production GPU queue persistence, external observability vendor integration, alert delivery, automatic provider retries, customer-facing self-hosted controls, inline widget voice input upload, continuous listening, WebRTC avatar calls, realtime lip-sync transport, barge-in/interruption handling, operator handoff workflow, live staff chat, kiosk hardware management, offline runtime, CRM sync, notifications, webhook delivery workers, browser-rendered 3D avatar mode, voice cloning, custom voice upload, public identity verification, KYC, biometric face recognition, external celebrity detection, or production self-hosted inference.
+- No future feature flows beyond Phase 27 data governance foundation: no Stripe checkout, subscriptions, invoices, payment methods, billing portal, hard usage blocking, automatic plan mutation, cross-workspace search outside current memberships, custom domains, production GPU queue persistence, external observability vendor integration, alert delivery, automatic provider retries, customer-facing self-hosted controls, inline widget voice input upload, continuous listening, WebRTC avatar calls, realtime lip-sync transport, barge-in/interruption handling, operator handoff workflow, live staff chat, kiosk hardware management, offline runtime, CRM sync, notifications, webhook delivery workers, browser-rendered 3D avatar mode, voice cloning, custom voice upload, public identity verification, KYC, biometric face recognition, external celebrity detection, production self-hosted inference, automatic destructive deletion, background export queues, object-storage export delivery, legal hold automation, external DSR integrations, or compliance-certification claims.
 
 ## Current Next Step
 
-Phase 25 implementation is pending manual approval in `docs/development.md` and `docs/architecture/manual-verification-checklist.md`.
+Phase 27 implementation is pending manual approval in `docs/development.md` and `docs/architecture/manual-verification-checklist.md`.
 
 ## Verification Commands (manual, user-run)
 
@@ -361,8 +373,8 @@ Phase 25 implementation is pending manual approval in `docs/development.md` and 
 - `pnpm dev:api`
 - `pnpm dev:ai-runtime`
 - Execute the manual verification paths listed in `docs/development.md`.
-- Execute the Phase 25 master checklist in `docs/architecture/manual-verification-checklist.md`.
-- Additional suggested manual commands after Phase 25:
+- Execute the Phase 27 checklist in `docs/architecture/manual-verification-checklist.md`.
+- Additional suggested manual commands after Phase 27:
   - `pnpm typecheck`
   - `pnpm lint`
   - `pnpm test`

@@ -24,6 +24,9 @@ model User {
   revokedApiKeys         ApiKey[]           @relation("ApiKeyRevokedBy")
   createdWebhookEndpoints WebhookEndpoint[] @relation("WebhookEndpointCreatedBy")
   revokedWebhookEndpoints WebhookEndpoint[] @relation("WebhookEndpointRevokedBy")
+  requestedDataExports    WorkspaceDataExport[] @relation("WorkspaceDataExportRequestedBy")
+  requestedDeletionRequests WorkspaceDeletionRequest[] @relation("WorkspaceDeletionRequestedBy")
+  canceledDeletionRequests WorkspaceDeletionRequest[] @relation("WorkspaceDeletionCanceledBy")
   auditLogs              AuditLog[]
 }
 
@@ -51,7 +54,59 @@ model Workspace {
   apiKeys          ApiKey[]
   webhookEndpoints WebhookEndpoint[]
   billingAccount   BillingAccount?
+  dataExports       WorkspaceDataExport[]
+  deletionRequests  WorkspaceDeletionRequest[]
   auditLogs         AuditLog[]
+}
+
+model WorkspaceDataExport {
+  id                String                @id @default(cuid())
+  workspaceId       String
+  requestedByUserId String?
+  status            WorkspaceExportStatus @default(COMPLETED)
+  scope             String[]
+  manifest          Json?
+  completedAt       DateTime?
+  expiresAt         DateTime
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  requestedByUser User?     @relation("WorkspaceDataExportRequestedBy", fields: [requestedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@index([requestedByUserId])
+  @@index([status])
+  @@index([expiresAt])
+  @@index([createdAt])
+  @@index([workspaceId, createdAt])
+}
+
+model WorkspaceDeletionRequest {
+  id                String                         @id @default(cuid())
+  workspaceId       String
+  requestedByUserId String?
+  canceledByUserId  String?
+  status            WorkspaceDeletionRequestStatus @default(PENDING)
+  reason            String?
+  scheduledDeletionAt DateTime
+  canceledAt        DateTime?
+  completedAt       DateTime?
+  metadata          Json?
+  createdAt         DateTime                       @default(now())
+  updatedAt         DateTime                       @updatedAt
+
+  workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  requestedByUser User?     @relation("WorkspaceDeletionRequestedBy", fields: [requestedByUserId], references: [id], onDelete: SetNull)
+  canceledByUser  User?     @relation("WorkspaceDeletionCanceledBy", fields: [canceledByUserId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@index([requestedByUserId])
+  @@index([canceledByUserId])
+  @@index([status])
+  @@index([scheduledDeletionAt])
+  @@index([createdAt])
+  @@index([workspaceId, status, createdAt])
 }
 
 model AuditLog {
@@ -676,6 +731,8 @@ enum AuditLogTargetType {
   LEAD
   SAFETY_EVENT
   USAGE_EVENT
+  DATA_EXPORT
+  DELETION_REQUEST
   API_KEY
   BILLING_SUBSCRIPTION
   WEBHOOK
@@ -684,6 +741,18 @@ enum AuditLogTargetType {
   DOMAIN_ALLOWLIST
   ADMIN
   SYSTEM
+}
+
+enum WorkspaceExportStatus {
+  COMPLETED
+  EXPIRED
+  FAILED
+}
+
+enum WorkspaceDeletionRequestStatus {
+  PENDING
+  CANCELED
+  COMPLETED
 }
 
 enum AvatarStatus {

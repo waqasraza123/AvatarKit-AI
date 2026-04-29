@@ -263,6 +263,16 @@
   - operations readiness must show env variable names and static configuration state only; it must not claim live connectivity
   - manual verification remains the human owner's responsibility
 - Phase 26 must not add Phase 27 behavior, new product modules, real cloud upload adapters, fake Redis verification, fake storage verification, provider health success claims, CRM integrations, billing checkout, custom domains, production self-hosted GPU rendering, WebRTC avatar calls, 3D rendering, broad redesigns, commits, or pushes.
+- Phase 27 adds data governance foundation only:
+  - exports must be workspace-scoped and authenticated
+  - export payloads must redact password hashes, sessions, raw API keys, API key hashes, webhook secret hashes, provider secrets, environment values, and private runtime configuration
+  - export downloads may be synchronous in this phase but must expire
+  - deletion requests are scheduling/audit records only
+  - destructive deletion must not run automatically until a future approved worker or manual operator procedure exists
+  - deletion requests require workspace owner role and workspace-slug confirmation
+  - data-governance UI must not claim legal/compliance automation
+  - manual verification remains the human owner's responsibility
+- Phase 27 must not add automatic destructive deletion, background export queues, object-storage export delivery, legal hold automation, billing cancellation, CRM deletion, webhook delivery workers, external DSR integrations, or compliance-certification claims.
 
 ## Phase 1 decisions (implemented)
 

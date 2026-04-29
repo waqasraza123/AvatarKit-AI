@@ -178,6 +178,14 @@ function targetTypeForAction(action: string): AuditLogTargetType {
     return AuditLogTargetType.LEAD
   }
 
+  if (action.startsWith("data_export.")) {
+    return AuditLogTargetType.DATA_EXPORT
+  }
+
+  if (action.startsWith("workspace_deletion.")) {
+    return AuditLogTargetType.DELETION_REQUEST
+  }
+
   return AuditLogTargetType.SYSTEM
 }
 
@@ -202,6 +210,8 @@ function targetIdForAction(input: {
     metadataString(input.metadata, "domainId") ??
     metadataString(input.metadata, "leadId") ??
     metadataString(input.metadata, "safetyEventId") ??
+    metadataString(input.metadata, "dataExportId") ??
+    metadataString(input.metadata, "deletionRequestId") ??
     metadataString(input.metadata, "workspaceId")
 }
 

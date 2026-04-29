@@ -1,3 +1,4 @@
+import Link from "next/link"
 import { getWorkspaceContextForRequest } from "@/lib/workspace"
 
 export default async function DashboardSettingsPage({
@@ -20,7 +21,7 @@ export default async function DashboardSettingsPage({
       <section className="content-card">
         <p className="eyebrow">Settings</p>
         <h1>Workspace settings</h1>
-        <p>Settings are intentionally limited to read-only workspace details in Phase 1.</p>
+        <p>Review workspace identity, membership context, and production governance controls.</p>
         <dl className="settings-grid">
           <div>
             <dt>Workspace name</dt>
@@ -41,13 +42,14 @@ export default async function DashboardSettingsPage({
         </dl>
         <section className="placeholder-block">
           <h2>Members</h2>
-          <p>Member invitations and role updates are disabled until Phase 2.</p>
+          <p>Member invitations and role updates are still managed outside this local dashboard build.</p>
         </section>
         <section className="placeholder-block">
-          <h2>Danger zone</h2>
-          <button className="avatarkit-button avatarkit-button-secondary" disabled>
-            Delete workspace (disabled)
-          </button>
+          <h2>Data governance</h2>
+          <p>Export workspace records, inspect retained data counts, and create audited deletion requests.</p>
+          <Link className="avatarkit-button avatarkit-button-primary" href="/dashboard/settings/data">
+            Open data governance
+          </Link>
         </section>
       </section>
     </main>

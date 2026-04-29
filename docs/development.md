@@ -1,5 +1,40 @@
 # Development
 
+## Phase 27 - Data Governance Foundation
+
+Detailed Phase 27 notes live in:
+
+- `docs/architecture/data-governance.md`
+- `docs/architecture/manual-verification-checklist.md`
+
+Phase 27 adds:
+
+- first-class `WorkspaceDataExport` records for workspace-scoped export requests
+- first-class `WorkspaceDeletionRequest` records for audited deletion intent
+- export and deletion target types in the durable audit taxonomy
+- `/dashboard/settings/data` with retained record counts, export history, deletion request history, and role-gated actions
+- authenticated JSON export downloads under `/api/dashboard/data-exports/[exportId]/download`
+- redacted export payloads that exclude password hashes, sessions, raw keys, key hashes, webhook secret hashes, provider secrets, and environment values
+- owner-only deletion request and cancellation flows with workspace-slug confirmation
+- audit events for export creation, deletion request creation, and deletion request cancellation
+
+Phase 27 intentionally does not add automatic destructive deletion, background export jobs, object-storage export files, legal hold automation, billing-account cancellation, CRM deletion, webhook delivery, or compliance-certification claims.
+
+Suggested manual owner commands after reviewing Phase 27:
+
+```text
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm prisma generate
+pnpm build
+python -m pytest
+python -m compileall services
+git status --short
+```
+
+Manual verification paths are listed in `docs/architecture/manual-verification-checklist.md`.
+
 ## Phase 26 - Durable Production Controls and Operator Foundation
 
 Detailed Phase 26 notes live in:

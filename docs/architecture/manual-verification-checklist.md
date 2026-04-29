@@ -2,6 +2,61 @@
 
 These checks are for the human owner. Codex did not run them.
 
+## Phase 27 Data Governance
+
+1. Data governance access
+   Path/action: open `/dashboard/settings/data` as a workspace member.
+   Expected: retained record counts render for the active workspace only.
+
+2. Export creation
+   Path/action: create an export as `OWNER` or `ADMIN`.
+   Expected: export history row appears with `COMPLETED` status and a download link.
+
+3. Export download
+   Path/action: download the export JSON.
+   Expected: JSON includes workspace-owned data and excludes password hashes, sessions, raw API keys, API key hashes, webhook secret hashes, provider secrets, and environment values.
+
+4. Export role gates
+   Path/action: try export creation as `OPERATOR` or `VIEWER`.
+   Expected: creation is blocked.
+
+5. Cross-workspace export isolation
+   Path/action: try opening an export download URL from a user without membership in that export workspace.
+   Expected: request is rejected.
+
+6. Deletion request confirmation
+   Path/action: request deletion as `OWNER` without typing the workspace slug, then with the correct slug.
+   Expected: incorrect confirmation is rejected; correct confirmation records a pending request.
+
+7. Deletion request cancellation
+   Path/action: cancel a pending deletion request as `OWNER`.
+   Expected: request status becomes `CANCELED`.
+
+8. Deletion role gates
+   Path/action: try deletion request or cancellation as non-owner.
+   Expected: mutation is blocked.
+
+9. Audit coverage
+   Path/action: inspect `/dashboard/operations/audit-log` after export/deletion actions.
+   Expected: `data_export.created`, `workspace_deletion.requested`, and `workspace_deletion.canceled` events appear with safe metadata.
+
+10. Non-goal protection
+    Path/action: inspect code and UI.
+    Expected: no automatic destructive deletion, background export queue, object-storage export delivery, CRM deletion, billing cancellation, legal hold automation, or compliance-certification claim exists.
+
+Suggested owner commands after reviewing Phase 27:
+
+```text
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm prisma generate
+pnpm build
+python -m pytest
+python -m compileall services
+git status --short
+```
+
 ## Phase 26 Durable Controls
 
 1. Platform admin access
