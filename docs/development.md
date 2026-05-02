@@ -1,5 +1,37 @@
 # Development
 
+## Phase 28 - Conversation Intelligence Foundation
+
+Detailed Phase 28 notes live in:
+
+- `docs/architecture/conversation-intelligence.md`
+- `docs/architecture/manual-verification-checklist.md`
+
+Phase 28 adds:
+
+- `/dashboard/analytics` for workspace-scoped conversation intelligence
+- deterministic intent and outcome classification from existing transcript, lead, safety, and knowledge-gap data
+- period filtering for 7 days, 30 days, 90 days, and all time
+- top visitor questions, channel performance, avatar performance, and recent conversation summaries
+- a conversation detail intelligence panel with summary, intent, outcome, counts, and highlights
+- dashboard navigation and overview card updates for Analytics
+
+Phase 28 intentionally does not add LLM-generated summaries, embeddings, semantic clustering, external analytics exports, CRM sync, email notifications, automated lead scoring, background jobs, visitor identity resolution, cross-workspace analytics, or billing enforcement.
+
+Suggested manual owner commands after reviewing Phase 28:
+
+```text
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm build
+python -m pytest
+python -m compileall services
+git status --short
+```
+
+Manual verification paths are listed in `docs/architecture/manual-verification-checklist.md`.
+
 ## Phase 27 - Data Governance Foundation
 
 Detailed Phase 27 notes live in:

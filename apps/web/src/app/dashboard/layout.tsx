@@ -8,6 +8,7 @@ const navigationItems = [
   { label: "Avatars", href: "/dashboard/avatars" },
   { label: "Knowledge", href: "/dashboard/knowledge" },
   { label: "Conversations", href: "/dashboard/conversations" },
+  { label: "Analytics", href: "/dashboard/analytics" },
   { label: "Leads", href: "/dashboard/leads" },
   { label: "Embed", href: "/dashboard/embed" },
   { label: "Kiosk", href: "/dashboard/kiosk" },

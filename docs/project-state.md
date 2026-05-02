@@ -80,7 +80,7 @@ auth, workspace isolation, dashboard shell, and future avatar/knowledge/runtime 
 
 ## Current Phase
 
-Phase 27 is now implemented pending manual approval: Data Governance Foundation.
+Phase 28 is now implemented pending manual approval: Conversation Intelligence Foundation.
 
 ## Completed Major Slices
 
@@ -238,6 +238,10 @@ Phase 27 is now implemented pending manual approval: Data Governance Foundation.
 - `/dashboard/settings/data` is a real data governance surface for retained data inventory, workspace export history, deletion request history, and role-gated actions.
 - Authenticated export downloads exist under `/api/dashboard/data-exports/[exportId]/download`.
 - Workspace exports include workspace-owned product records while excluding password hashes, sessions, raw API keys, API key hashes, webhook secret hashes, provider secrets, environment values, and private runtime configuration.
+- `/dashboard/analytics` is a real workspace-scoped conversation intelligence surface.
+- Conversation intelligence derives deterministic summaries, primary intent, outcome, top repeated questions, channel performance, avatar performance, and review metrics from existing conversations, messages, leads, safety events, and knowledge gaps.
+- Conversation detail pages now show deterministic intelligence summaries, intent, outcome, message counts, lead/gap/safety signals, and highlights.
+- Phase 28 documentation lives in `docs/architecture/conversation-intelligence.md`.
 - Workspace export creation/download is restricted to `OWNER` and `ADMIN`.
 - Workspace deletion requests and cancellation are restricted to `OWNER` and require workspace-slug confirmation when requested.
 - Deletion requests are audit/scheduling records only; no automatic destructive deletion runs in Phase 27.

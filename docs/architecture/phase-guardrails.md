@@ -273,6 +273,15 @@
   - data-governance UI must not claim legal/compliance automation
   - manual verification remains the human owner's responsibility
 - Phase 27 must not add automatic destructive deletion, background export queues, object-storage export delivery, legal hold automation, billing cancellation, CRM deletion, webhook delivery workers, external DSR integrations, or compliance-certification claims.
+- Phase 28 adds conversation intelligence foundation only:
+  - analytics must remain workspace-scoped
+  - analytics derive from existing conversations, messages, leads, safety events, and knowledge gaps
+  - deterministic summaries must prefer existing `Conversation.summary` and must not call external providers
+  - intent and outcome classification must be deterministic and reviewable
+  - dashboard analytics may cap reads for responsiveness and must disclose the cap
+  - transcript analytics must not expose private source-photo paths, provider secrets, raw API keys, webhook secrets, session tokens, hidden prompts, or raw private runtime configuration
+  - manual verification remains the human owner's responsibility
+- Phase 28 must not add LLM-generated summaries, semantic clustering, embeddings, external BI exports, CRM sync, email notifications, lead scoring automation, visitor identity resolution, cross-workspace analytics, background analytics jobs, or billing enforcement.
 
 ## Phase 1 decisions (implemented)
 

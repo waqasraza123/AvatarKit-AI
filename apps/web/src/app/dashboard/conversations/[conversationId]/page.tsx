@@ -23,6 +23,7 @@ import {
   safetyLabel,
   type SafetyEventListItem
 } from "@/lib/safety"
+import { fetchConversationIntelligenceDetail } from "@/lib/conversation-intelligence"
 
 type PageParams = Promise<{ conversationId: string }>
 type SearchParams = Promise<{ workspaceId?: string; statusError?: string; gapMarked?: string; gapError?: string }>
@@ -449,9 +450,10 @@ export default async function ConversationDetailPage({
     return null
   }
 
-  const [conversation, safetyEvents] = await Promise.all([
+  const [conversation, safetyEvents, intelligence] = await Promise.all([
     fetchConversationDetail(context.workspace.id, conversationId),
-    fetchConversationSafetyEvents(context.workspace.id, conversationId)
+    fetchConversationSafetyEvents(context.workspace.id, conversationId),
+    fetchConversationIntelligenceDetail(context.workspace.id, conversationId)
   ])
   if (!conversation) {
     redirect("/dashboard/conversations")
@@ -497,6 +499,35 @@ export default async function ConversationDetailPage({
           <p className={gapMessage.tone === "success" ? "form-success" : "form-error"}>{gapMessage.message}</p>
         ) : null}
       </section>
+
+      {intelligence ? (
+        <section className="content-card">
+          <div className="content-card-header">
+            <div>
+              <p className="eyebrow">Conversation intelligence</p>
+              <h2>Summary and outcome</h2>
+            </div>
+            <span className="status-pill">{intelligence.outcomeLabel}</span>
+          </div>
+          <p className="conversation-preview-text">{intelligence.summary}</p>
+          <div className="conversation-metrics">
+            <span>Intent: {intelligence.primaryIntentLabel}</span>
+            <span>{intelligence.visitorMessageCount} visitor messages</span>
+            <span>{intelligence.assistantMessageCount} avatar responses</span>
+            {intelligence.leadCaptured ? <span className="status-pill lead-status-new">lead captured</span> : null}
+            {intelligence.knowledgeGapCount > 0 ? <span className="status-pill status-pill-warning">{intelligence.knowledgeGapCount} gaps</span> : null}
+            {intelligence.safetyEventCount > 0 ? <span className="status-pill status-pill-danger">{intelligence.safetyEventCount} safety</span> : null}
+          </div>
+          <ul className="conversation-message-metadata">
+            {intelligence.highlights.map(highlight => (
+              <li key={highlight}>{highlight}</li>
+            ))}
+          </ul>
+          <Link className="avatarkit-link-button" href="/dashboard/analytics?period=30d">
+            Open analytics
+          </Link>
+        </section>
+      ) : null}
 
       {conversation.lead ? (
         <section className="content-card">

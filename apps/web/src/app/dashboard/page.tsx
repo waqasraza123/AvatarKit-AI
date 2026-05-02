@@ -11,7 +11,11 @@ const moduleCards = [
   },
   {
     title: "Conversations",
-    description: "Conversation and transcripts will appear here in later phases."
+    description: "Review transcripts, status, safety, media, and knowledge gap signals."
+  },
+  {
+    title: "Analytics",
+    description: "Conversation intelligence for intents, outcomes, top questions, and channel performance."
   },
   {
     title: "Leads",

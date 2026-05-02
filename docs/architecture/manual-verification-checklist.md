@@ -2,6 +2,60 @@
 
 These checks are for the human owner. Codex did not run them.
 
+## Phase 28 Conversation Intelligence
+
+1. Analytics access
+   Path/action: open `/dashboard/analytics` as a workspace member.
+   Expected: page renders metrics for the active workspace only.
+
+2. Period filtering
+   Path/action: switch between 7 days, 30 days, 90 days, and all time.
+   Expected: metrics and tables update according to the selected period.
+
+3. Intent and outcome mix
+   Path/action: inspect conversations with pricing, booking, support, lead, handoff, safety, and knowledge-gap signals.
+   Expected: deterministic intent and outcome tables classify those sessions into visible buckets.
+
+4. Top questions
+   Path/action: create repeated visitor questions across conversations.
+   Expected: repeated questions group by normalized text and show count, last asked time, avatar, and intent.
+
+5. Channel performance
+   Path/action: inspect dashboard, widget, kiosk, and API conversations where available.
+   Expected: channel table shows conversation count, lead count, and share.
+
+6. Avatar performance
+   Path/action: use multiple avatars with conversations.
+   Expected: avatar table shows per-avatar conversations, leads, handoffs, failures, and top intent.
+
+7. Conversation detail
+   Path/action: open `/dashboard/conversations/[conversationId]`.
+   Expected: intelligence panel shows deterministic summary, primary intent, outcome, message counts, lead/gap/safety signals, and highlights.
+
+8. Cross-workspace isolation
+   Path/action: try opening analytics while switching workspaces or using a conversation ID from another workspace.
+   Expected: analytics and detail panels only use records from the active accessible workspace.
+
+9. Cap disclosure
+   Path/action: inspect a workspace with more than 500 conversations.
+   Expected: analytics use the latest 500 conversations and disclose the cap.
+
+10. Non-goal protection
+    Path/action: inspect code and UI.
+    Expected: no LLM summary calls, embeddings, semantic clustering, CRM sync, email notifications, external BI export, automated lead scoring, visitor identity resolution, cross-workspace analytics, background analytics job, or billing enforcement exists.
+
+Suggested owner commands after reviewing Phase 28:
+
+```text
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm build
+python -m pytest
+python -m compileall services
+git status --short
+```
+
 ## Phase 27 Data Governance
 
 1. Data governance access

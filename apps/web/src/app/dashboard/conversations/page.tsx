@@ -73,8 +73,7 @@ function renderEmptyState(hasFilters: boolean): JSX.Element {
     <section className="conversation-empty-state content-card">
       <h2>No conversations yet</h2>
       <p>
-        Conversations appear after you use Avatar Studio Preview or after a visitor sends a Phase 12 widget message.
-        KIOSK and API channels remain future placeholders.
+        Conversations appear after Avatar Studio Preview, widget, kiosk, or public API sessions store transcript messages.
       </p>
       <div className="avatar-card-actions">
         <Link className="avatarkit-link-button" href="/dashboard/avatars">
@@ -319,10 +318,10 @@ export default async function DashboardConversationsPage({
         <p className="eyebrow">Conversations</p>
         <h1>Conversation Dashboard</h1>
         <p className="hero-copy section-subtitle">
-          Review dashboard preview and Phase 12 widget transcripts, then manage conversation status.
+          Review dashboard preview, widget, kiosk, and public API transcripts, then manage conversation status.
         </p>
         <p className="form-helper">
-          Widget conversations are created by public published-avatar requests. KIOSK and API remain future channels.
+          Conversation intelligence is available from Analytics after transcript messages are stored.
         </p>
         <ConversationFilters currentFilters={filters} avatarOptions={avatarOptions} />
         {statusErrorMessage ? <p className="form-error">{statusErrorMessage}</p> : null}

@@ -2972,6 +2972,12 @@ select {
   gap: 12px;
 }
 
+.operations-split-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
 .operations-trace-table {
   min-width: 960px;
 }
@@ -3113,6 +3119,7 @@ select {
   .billing-limit-grid,
   .billing-plan-grid,
   .operations-filter-row,
+  .operations-split-grid,
   .operations-metric-grid {
     grid-template-columns: 1fr;
   }
